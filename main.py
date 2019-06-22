@@ -25,6 +25,7 @@ description = '''
         Custom calender reminders.      
 
             Made by Lolisen#2158
+        Source code on GitHub: Awolize 
 ------------------------------------------'''
 
 bot = commands.Bot(command_prefix=command_prefix, description=description)
