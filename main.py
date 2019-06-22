@@ -7,6 +7,8 @@ import time
 import datetime
 import json
 
+import privateData
+
 '''
 
 Invite link: 
@@ -27,7 +29,7 @@ description = '''
 
 bot = commands.Bot(command_prefix=command_prefix, description=description)
 
-channel_id = 592043787065360404
+channel_id = privateData.channel_id
 update_frequency = 20
 backup_frequency = 3600 # 60min
 
@@ -330,12 +332,10 @@ class Stat(commands.Cog):
 
      
 def Launcher():
-    token = "NTM2NTI1NDkyMDE1MzMzMzc2.DyX94w.HB46tL7GXoNhDGhABw1g78814fU"
-
     bot.add_cog(Misc(bot))
     bot.add_cog(Date(bot))
     bot.add_cog(Stat(bot))
-    bot.run(token)
+    bot.run(privateData.token_id)
 
 if __name__ == "__main__":
     Launcher()
