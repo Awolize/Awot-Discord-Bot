@@ -1,16 +1,17 @@
-import discord
-from discord.ext import commands
-import databaseHandler as dbh
 import asyncio
-
-import time
 import datetime
 import json
+import time
+from dataclasses import dataclass
+from json import JSONEncoder
 
+import discord
+from discord.ext import commands
+
+import databaseHandler as dbh
 import privateData
 
 '''
-
 Invite link: 
 
 https://discordapp.com/api/oauth2/authorize?client_id=536525492015333376&permissions=322560&scope=bot
@@ -65,13 +66,13 @@ class Date(commands.Cog):
             await asyncio.sleep(delta)
 
             now = time.strftime('%m-%d')
-            date = datetime.now()
+            date = datetime.datetime.now()
             result = dbh.getBirthdayByDate(date.day, date.month)
             dates = []
             for row in result:
                 dates.append((row[0], "{}-{}-{}".format(row[1], row[2], row[3])))
 
-            currentYear = datetime.now().year
+            currentYear = datetime.datetime.now().year
             for memberID, memberInfo in dates:
                 member = bot.get_user(memberID)
                 
@@ -100,7 +101,7 @@ class Date(commands.Cog):
         msg = await ctx.send('Adding birthday to the database')
         date = datetime.datetime.strptime(dateStr, "%d-%m-%Y")
         
-        success = dbh.addBirthdayToDatabase(date, str(member.id)) 
+        success = dbh.addBirthdayToDatabase(date, member.id) 
         if success:
             await asyncio.sleep(0.5)
             await msg.edit(content='Trying to add birthday to the database...\nAdded {0}\'s birthday ({1}) to the database.'.format(member.mention, dateStr))
@@ -117,7 +118,7 @@ class Date(commands.Cog):
         if member is None:
             member = ctx.author
 
-        dates = dbh.getBirthdayByID(str(member.id))
+        dates = dbh.getBirthdayByID(member.id)
         temp = []
         for d,m,y in dates:
             temp.append(datetime.datetime.strptime("{}-{}-{}".format(d,m,y), "%d-%m-%Y").date())
@@ -135,7 +136,6 @@ class Date(commands.Cog):
 
         if member is None:
             member = ctx.author
-
 
 class Misc(commands.Cog):
     '''
@@ -165,14 +165,30 @@ class Misc(commands.Cog):
     async def test(self, ctx, member: discord.Member):
         await ctx.send("{}".format(member.status))
 
+@dataclass
+class MyMember:
+    names: list()
+    status: dict()
+    games: dict()
+
+class MemberEncoder(JSONEncoder):
+    def default(self, object):
+        if isinstance(object, MyMember):
+            return object.__dict__
+        else:
+            # call base class implementation which takes care of
+            # raising exceptions for unsupported types
+
+            return json.JSONEncoder.default(self, object)
+
 class Stat(commands.Cog):
     '''
     Stat: handels game time and stats 
     '''
-
     def __init__(self, bot):
         self.bot = bot
-        self.memberInfo = self.importBackup()
+        self.memberInfo = dict()
+        self.importBackup()
         self.bg_task_update = self.bot.loop.create_task(self.update_background_task())
         self.bg_task_backup = self.bot.loop.create_task(self.backup_background_task())
 
@@ -202,107 +218,165 @@ class Stat(commands.Cog):
 
         status = ["Online", "Do Not Disturb", "Idle", "Offline"]
         for member in members:  
-            if member.id in self.memberInfo:
+            if member.id in self.memberInfo[ctx.guild.id]:
                 statusName = ""
                 statusValue = ""
                 totalActiveTime = 0
-                for activity in self.memberInfo[member.id]:
-                    if activity in status:
-                        time = datetime.timedelta(seconds=self.memberInfo[member.id][activity])
-                        statusName += "{}\n".format(str(activity))
-                        statusValue += "{}\n".format(str(time))
-                        if activity != "Offline":
-                            totalActiveTime += self.memberInfo[member.id][activity]
+                for activity in self.memberInfo[ctx.guild.id][member.id].status:
+                    time = self.memberInfo[ctx.guild.id][member.id].status[activity]
+                    if time/3600 < 10:
+                        statusValue += "{:.1f} h\n".format(time/3600)
+                    else:
+                        statusValue += "{:.0f} h\n".format(time/3600)      
+                    
+                    statusName += "{}\n".format(str(activity))
+                    if activity != "Offline":
+                        totalActiveTime += self.memberInfo[ctx.guild.id][member.id].status[activity]
 
                 if totalActiveTime == 0:
                     continue
 
                 gameName = ""
                 gameValue = ""
-                for activity in self.memberInfo[member.id]:
-                    if activity not in status:
-                        time = datetime.timedelta(seconds=self.memberInfo[member.id][activity])
-                        gameName += "{}\n".format(str(activity))
-                        gameValue += "{}\n".format(str(time))
+                for activity in self.memberInfo[ctx.guild.id][member.id].games:
+                    time = self.memberInfo[ctx.guild.id][member.id].games[activity]
+                    if time/3600 < 10:
+                        gameValue += "{:.1f} h\n".format(time/3600)
+                    else:
+                        gameValue += "{:.0f} h\n".format(time/3600)                    
+                    gameName += "{}\n".format(str(activity))
+                
+                # if empty
                 if gameName == "":
                     gameName = "No games on record"
                     gameValue = ":slight_frown:"
 
                 description="-------------------------------------------------\nShows {}'s time, yes.\n\n{} joined at {:.19}.\n-------------------------------------------------".format(member.mention, member.name, str(member.joined_at))
-                embed=discord.Embed(title="All time stats", description=description, color=0x1016fe)
+                embed=discord.Embed(title="All time stats (GitHub link)")
                 embed.set_author(name=member)
                 embed.set_thumbnail(url=member.avatar_url)
+                embed.description = description
+                embed.color = 0x1016fe
+                embed.timestamp = datetime.datetime.utcnow()
+                embed.url = "https://github.com/Awolize/Awot-Discord-Bot"
+                embed.set_footer(text="~Thats it for this time~")
+
                 embed.add_field(name="Status", value=statusName, inline=True)
                 embed.add_field(name="Time", value=statusValue, inline=True)
                 embed.add_field(name="Games", value=gameName, inline=True)
                 embed.add_field(name="Time", value=gameValue, inline=True)
-                #embed.timestamp(datetime.datetime.utcnow())
-                embed.set_footer(text="~Thats it for this time~ ")
+
                 await ctx.send(embed=embed)
+
+    @commands.command()
+    async def gamestats(self, ctx):
+        status = ["Online", "Do Not Disturb", "Idle", "Offline"]
+        games = dict()
+        for member in ctx.guild.members:  
+            if member.id in self.memberInfo[ctx.guild.id]:
+                for activity in self.memberInfo[ctx.guild.id][member.id].games:
+                    time = self.memberInfo[ctx.guild.id][member.id].games[activity]
+                    if activity not in games:
+                        games[activity] = time
+                    elif activity in games:
+                        games[activity] += time
+
+        sorted_games = [(k, games[k]) for k in sorted(games, key=games.get, reverse=True)]
+
+        gamePlacement = ""
+        gameName = ""
+        gameValue = ""
+        counter = 0
+
+        #for key in games.keys():
+        for game, time in sorted_games:
+            counter += 1
+            #gamePlacement += "{}\n".format(counter)
+            gameName += "{} \n".format(game)
+            if time/3600 < 10:
+                gameValue += "{:.1f} h\n".format(time/3600)
+            else:
+                gameValue += "{:.0f} h\n".format(time/3600)
+            if counter == 10:
+                break
+
+        if gameName == "":
+            gamePlacement = ":/"
+            gameName = "No games on record"
+            gameValue = ":slight_frown:"
+
+        description="-------------------------------------------------\nHello:)\n-------------------------------------------------".format()
+        embed=discord.Embed(title="All time stats", description=description, color=0x1016fe)
+        #embed.set_author(name=)
+        #embed.set_thumbnail(url=self.bot.avatar_url)
+        #embed.add_field(name="Top", value=gamePlacement, inline=True)
+        embed.add_field(name="Games", value=gameName, inline=True)
+        embed.add_field(name="Time", value=gameValue, inline=True)
+        embed.set_footer(text="~Thats it for this time~")
+        await ctx.send(embed=embed)
 
     async def getMembersInfo(self):
         try:
             for server in self.bot.guilds:
+                if server.id not in self.memberInfo:
+                    self.memberInfo[server.id] = dict()
+            
                 for member in server.members:
+                    if member.bot:
+                        continue
+
                     name = member.id
                     
-                    if name not in self.memberInfo:
+                    if name not in self.memberInfo[server.id]:
                         if member.status == discord.Status.online or member.status == discord.Status.idle or member.status == discord.Status.dnd:
-                            self.memberInfo[name] = dict()
-                            self.memberInfo[name]["Online"] = 0
-                            self.memberInfo[name]["Idle"] = 0
-                            self.memberInfo[name]["Do Not Disturb"] = 0
-                            self.memberInfo[name]["Offline"] = 0
+                            self.memberInfo[server.id][name] = MyMember(list(),dict(),dict())
+                            self.memberInfo[server.id][name].names.insert(0, str(member))
+                            self.memberInfo[server.id][name].status["Online"] = 0
+                            self.memberInfo[server.id][name].status["Idle"] = 0
+                            self.memberInfo[server.id][name].status["Do Not Disturb"] = 0
+                            self.memberInfo[server.id][name].status["Offline"] = 0
                         else:
                             continue
 
+                    if str(member) not in self.memberInfo[server.id][name].names:
+                        self.memberInfo[server.id][name].names.insert(0, str(member))
+
                     if member.status == discord.Status.online:
-                        self.memberInfo[name]["Online"] += update_frequency
+                        self.memberInfo[server.id][name].status["Online"] += update_frequency
                     elif member.status == discord.Status.idle:
-                        self.memberInfo[name]["Idle"] += update_frequency
+                        self.memberInfo[server.id][name].status["Idle"] += update_frequency
                     elif member.status == discord.Status.dnd:
-                        self.memberInfo[name]["Do Not Disturb"] += update_frequency
+                        self.memberInfo[server.id][name].status["Do Not Disturb"] += update_frequency
                     elif member.status == discord.Status.offline:
-                        self.memberInfo[name]["Offline"] += update_frequency
-                               
-                    if member.activity is not None:
-                        if str(member.activity.name) in self.memberInfo[name]:
-                            self.memberInfo[name][str(member.activity.name)] += update_frequency
-                        else:
-                            self.memberInfo[name][str(member.activity.name)] = update_frequency
+                        self.memberInfo[server.id][name].status["Offline"] += update_frequency
+
+                    if member.status == discord.Status.online or member.status == discord.Status.dnd:        
+                        if member.activity is not None:
+                            if str(member.activity.name) in self.memberInfo[server.id][name].games:
+                                self.memberInfo[server.id][name].games[str(member.activity.name)] += update_frequency
+                            else:
+                                self.memberInfo[server.id][name].games[str(member.activity.name)] = update_frequency
                         
         except Exception as e:
-            print("Exception: {}".format(e))
+            print("getMembersInfo: Exception: {}".format(e))
             pass
 
-    @commands.command()
-    async def backup(self, ctx):
-        '''        
-        This command manually backups all the stats and is normally not used.
-        Normal use: automatic frequency.
-        '''
-
-        print("Manual backup initiated...")
-        msg = await ctx.send("Manual backup initiated...")
-        self.performBackup()
-        await msg.edit(content="Manual backup initiated... Done.")
-  
     def performBackup(self):
-        print("Performs backup!")
-        print("Number of users: {}.".format(len(self.memberInfo)))
-        rawData = self.memberInfo
-        jsonData = json.dumps(rawData, sort_keys=True)
-        with open('stats_backup.json', 'w') as f:
-            json.dump(rawData, f)
+        with open('stats_backup.json', 'w') as write_file:
+            json.dump(self.memberInfo, write_file, cls=MemberEncoder, indent=4)
 
     def importBackup(self):
         try: 
             with open('stats_backup.json', 'r') as f:
-                return json.load(f)
+                json_data = json.load(f)
+
+            for server in json_data.keys():
+                self.memberInfo[int(server)] = dict()
+                for member in json_data[server].keys():
+                    self.memberInfo[int(server)][int(member)] = MyMember(list(json_data[server][member]["names"]),dict(json_data[server][member]["status"]),dict(json_data[server][member]["games"]))
 
         except Exception as e:
-            print(e)
-            return {}
+            print("importBackup: Exception: {}".format(e))
 
     async def backup_background_task(self):
         await self.bot.wait_until_ready()
@@ -311,9 +385,6 @@ class Stat(commands.Cog):
             await asyncio.sleep(backup_frequency)
             print("Automatic backup initiated...")
             self.performBackup()
-
-            #msg = await channel.send("Automatic backup initiated...")
-            #msg = await msg.edit(content="Automatic backup initiated... \tDone.")
                    
     async def update_background_task(self):
         await self.bot.wait_until_ready()
@@ -323,15 +394,33 @@ class Stat(commands.Cog):
             await asyncio.sleep(update_frequency) # task runs every 60 seconds
 
     @commands.command()
+    async def save(self, ctx):
+        '''        
+        Saves all the stats manually.
+        '''
+        self.performBackup()
+
+        msg = await ctx.send("Saving data...")
+        print("Performs backup!")
+        members = 0
+        for server in self.memberInfo.keys():
+            members += len(self.memberInfo[server])
+        
+        servers_str = "Number of servers: {}.".format(len(self.memberInfo))
+        members_str = "Number of members: {}.".format(members) 
+        
+        print("{}\n{}".format(servers_str, members_str))
+        await msg.edit(content="Saving data...\n{}\n{}".format(servers_str, members_str))
+
+    @commands.command()
     async def stop(self, ctx):
         '''
         Stops the bot and saves the data.
         '''
-        await ctx.send("Shutting down...")
+        await ctx.send("Shutting down...\nSaving data...")
         self.performBackup()
         await self.bot.logout()
 
-     
 def Launcher():
     bot.add_cog(Misc(bot))
     bot.add_cog(Date(bot))
@@ -340,4 +429,3 @@ def Launcher():
 
 if __name__ == "__main__":
     Launcher()
-
