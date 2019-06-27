@@ -185,13 +185,16 @@ class Stat(commands.Cog):
     '''
     Stat: handels game time and stats 
     '''
+    
+
     def __init__(self, bot):
         self.bot = bot
         self.memberInfo = dict()
+        self.topList = dict()
         self.importBackup()
         self.bg_task_update = self.bot.loop.create_task(self.update_background_task())
         self.bg_task_backup = self.bot.loop.create_task(self.backup_background_task())
-
+       
     @commands.has_permissions(administrator=True)
     @commands.command()
     async def allstats(self, ctx):  
@@ -203,6 +206,58 @@ class Stat(commands.Cog):
             members.append(member)
 
         await self.statscalc(ctx, members)
+
+    @commands.command()
+    async def show(self, ctx, index):
+        if len(self.topList[ctx.guild.id]) == 0:
+            return
+
+        if index.isdigit() == False:
+            return
+
+        if int(index) < 1 or int(index) > len(self.topList[ctx.guild.id])+1:
+            return
+
+        status = ["Online", "Do Not Disturb", "Idle", "Offline"]
+
+
+        games = dict()
+        for member in ctx.guild.members: 
+            if member.id in self.memberInfo[ctx.guild.id]:
+                try:
+                    games[member.name] = self.memberInfo[ctx.guild.id][member.id].games[self.topList[ctx.guild.id][int(index)-1]]
+                except:
+                    pass
+
+        sorted_games = [(k, games[k]) for k in sorted(games, key=games.get, reverse=True)]
+
+        personName = ""
+        gameTime = ""
+        counter = 0
+
+        #for key in games.keys():
+        for person, time in sorted_games:
+            counter += 1
+            personName += "{} \n".format(person)
+            if time/3600 < 10:
+                gameTime += "{:.1f} h\n".format(time/3600)
+            else:
+                gameTime += "{:.0f} h\n".format(time/3600)
+            if counter == 10:
+                break
+
+        if personName == "":
+            personName = "No games on record"
+            gameTime = ":slight_frown:"
+
+        embed=discord.Embed(title=self.topList[ctx.guild.id][int(index)-1], color=0x1016fe)
+        #embed.set_author(name=)
+        #embed.set_thumbnail(url=self.bot.avatar_url)
+        embed.add_field(name="Top", value=personName, inline=True)
+        embed.add_field(name="Time", value=gameTime, inline=True)
+        embed.timestamp = datetime.datetime.utcnow()
+        embed.set_footer(text="~Thats it for this time~")
+        await ctx.send(embed=embed)
 
     @commands.command()
     async def stats(self, ctx, member: discord.Member):  
@@ -252,7 +307,7 @@ class Stat(commands.Cog):
                     gameValue = ":slight_frown:"
 
                 description="-------------------------------------------------\nShows {}'s time, yes.\n\n{} joined at {:.19}.\n-------------------------------------------------".format(member.mention, member.name, str(member.joined_at))
-                embed=discord.Embed(title="All time stats (GitHub link)")
+                embed=discord.Embed(title="Awot GitHub link")
                 embed.set_author(name=member)
                 embed.set_thumbnail(url=member.avatar_url)
                 embed.description = description
@@ -283,12 +338,16 @@ class Stat(commands.Cog):
 
         sorted_games = [(k, games[k]) for k in sorted(games, key=games.get, reverse=True)]
 
+        self.topList[ctx.guild.id] = list()
+        for x in sorted_games:
+            self.topList[ctx.guild.id].append(x[0])
+        self.topList[ctx.guild.id] = self.topList[ctx.guild.id][:10]
+
         gamePlacement = ""
         gameName = ""
         gameValue = ""
         counter = 0
 
-        #for key in games.keys():
         for game, time in sorted_games:
             counter += 1
             #gamePlacement += "{}\n".format(counter)
@@ -312,6 +371,7 @@ class Stat(commands.Cog):
         #embed.add_field(name="Top", value=gamePlacement, inline=True)
         embed.add_field(name="Games", value=gameName, inline=True)
         embed.add_field(name="Time", value=gameValue, inline=True)
+        embed.timestamp = datetime.datetime.utcnow()
         embed.set_footer(text="~Thats it for this time~")
         await ctx.send(embed=embed)
 
@@ -383,7 +443,7 @@ class Stat(commands.Cog):
         channel = self.bot.get_channel(channel_id) # channel ID goes here
         while not self.bot.is_closed():
             await asyncio.sleep(backup_frequency)
-            print("Automatic backup initiated...")
+            print("[{}] Automatic backup initiated...".format(datetime.datetime.now().strftime('%H:%M:%S')))
             self.performBackup()
                    
     async def update_background_task(self):
