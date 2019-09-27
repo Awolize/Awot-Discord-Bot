@@ -31,7 +31,7 @@ class FirestoreHandler():
                 u'IconUrl': avatarUrl,
             }
             db_ref = self.db.collection('users').document(str(user_id))
-            self.batch.set(db_ref, data)
+            self.batch.set(db_ref, data) 
 
         except Exception as e:
             print("[Error] FirestoreHandler.py -> add_user() -> Exception: {}".format(e))
