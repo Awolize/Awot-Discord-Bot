@@ -7,7 +7,7 @@
 
 ### Todos
 
- - Finishe rewrite of local storage (JSON -> SQLite3, using both atm)
+ - Finish rewrite of local storage (JSON -> SQLite3, using both atm)
  - Add Light Mode
 
 License
