@@ -426,6 +426,11 @@ class Stat(commands.Cog):
             print("[Error] main.py -> statscalc() -> Exception: {}".format(e))
             success = False
 
+    @commands.command()
+    async def updatedatabase(self, ctx):
+        msg = await ctx.send("Updating firebase with the current data...")
+        self.updateDatabase()
+        await msg.edit(content="Updating firebase with the current data... Done")
 
     @commands.command()
     async def gamestats(self, ctx):
@@ -544,8 +549,6 @@ class Stat(commands.Cog):
         # Save to json
         with open('stats_backup.json', 'w') as write_file:
             json.dump(self.memberInfo, write_file, cls=MemberEncoder, indent=4)
-
-        self.updateDatabase()
 
     def updateDatabase(self):
         # Save to database
