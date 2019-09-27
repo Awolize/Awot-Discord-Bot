@@ -9,7 +9,7 @@ Front-end: [React Native]
 
  - Finishe rewrite of local storage (JSON -> SQLite3, using both atm)
  - Add Light Mode
- - 
+
 License
 ----
 
