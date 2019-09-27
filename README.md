@@ -1,9 +1,9 @@
 # Awot
 ### Awot is a Discord stats collecter.
-Back-end: Python 3.7
-Cloud Database: [Firebase]'s Cloud Firestore
-Discord API Wrapper: [discord.py]
-Front-end: [React Native]
+- Back-end: Python 3.7
+- Cloud Database: [Firebase]'s Cloud Firestore
+- Discord API Wrapper: [discord.py]
+- Front-end: [React Native]
 
 ### Todos
 
