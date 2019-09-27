@@ -545,6 +545,8 @@ class Stat(commands.Cog):
         with open('stats_backup.json', 'w') as write_file:
             json.dump(self.memberInfo, write_file, cls=MemberEncoder, indent=4)
 
+        self.updateDatabase()
+
     def updateDatabase(self):
         # Save to database
         gsDB = gameStatsDBh.GameStatsDB()
@@ -592,8 +594,10 @@ class Stat(commands.Cog):
 
                 gsDB.update_games_by_user_id(userID, gamesList)
                 userobj = self.bot.get_user(userID)
-                firestoreHandler.main(str(userID), myMember.names, statusList, gameListFirebase, userobj.name, str(userobj.avatar_url))
-                firestoreHandler.addServersToUsers(str(userID), self.bot.get_guild(serverID).id)
+                firestoreHandler.main(str(userID), myMember.names, statusList, gameListFirebase, userobj.name, str(userobj.avatar_url_as(static_format='png', size=512)))
+
+                server = self.bot.get_guild(serverID)
+                firestoreHandler.addServersToUsers(str(userID), server.id, server.name, str(server.icon_url_as(static_format='png', size=512)))
         
         for serverId, serverInfo in self.memberInfo.items():
             userList = list()
@@ -601,7 +605,7 @@ class Stat(commands.Cog):
                 userobj = self.bot.get_user(userId)
                 userList.append({"id": str(userId), "name": userobj.name})
             server = self.bot.get_guild(serverId)
-            firestoreHandler.addServers(str(server.id), server.name, str(server.icon_url), userList)
+            firestoreHandler.addServers(str(server.id), server.name, str(server.icon_url_as(static_format='png', size=512)), userList)
 
         firestoreHandler.addServersToUsers_done()
 

@@ -36,10 +36,16 @@ class FirestoreHandler():
         except Exception as e:
             print("[Error] FirestoreHandler.py -> add_user() -> Exception: {}".format(e))
 
-    def addServersToUsers(self, userID: str, serverId: int):
+    def addServersToUsers(self, userID: str, serverId: int, serverName: str, serverIconUrl: str):
         if str(userID) not in self.userServerDict:
             self.userServerDict[str(userID)] = list()
-        self.userServerDict[str(userID)].append(serverId)
+
+        serverData = {
+            "id": str(serverId),
+            "name": serverName,
+            "iconUrl": serverIconUrl
+        }
+        self.userServerDict[str(userID)].append(serverData)
 
     def addServers(self, serverId: str, serverName: str, serverIconUrl: str, userList: list):
         serverData = {
@@ -55,13 +61,14 @@ class FirestoreHandler():
         self.serverDict[serverId] = serverData
 
     def addServersToUsers_done(self):
+        # Skriv om för mindre firebase usage
         for user_id, serverList in self.userServerDict.items():
             try:
                 data = {
                     u'Servers': serverList
                 }
                 db_ref = self.db.collection('users').document(str(user_id))
-                self.batch.update(db_ref, data) # Testa ändra update till set
+                self.batch.update(db_ref, data) # 
 
             except Exception as e:
                 print("[Error] FirestoreHandler.py -> addServersToUsers_done() -> Exception: {}".format(e))
