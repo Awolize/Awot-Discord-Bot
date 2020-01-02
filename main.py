@@ -415,9 +415,6 @@ class Stat(commands.Cog):
                     embed.url = "https://github.com/Awolize/Awot-Discord-Bot"
                     embed.set_footer(text="~Thats it for this time~")
 
-                    for emoji in self.bot.emojis:
-                        print(emoji)
-
                     embed.add_field(name="**Status**", value=statusName, inline=True)
                     embed.add_field(name="**Time**", value=statusValue, inline=True)
                     if gameName:
