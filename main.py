@@ -415,7 +415,7 @@ class Stat(commands.Cog):
                     embed.set_footer(text="~Thats it for this time~")
 
                     embed.add_field(name="Status", value=statusName, inline=True)
-                    embed.add_field(name="Time", value=statusValue, inline=True)
+                    embed.add_field(name="Time", value=statusValue + "      ", inline=True)
                     if gameName:
                         embed.add_field(name="Games", value=gameName, inline=True)
                         embed.add_field(name="Time", value=gameValue, inline=True)
