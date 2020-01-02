@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import time
+import psutil
 from dataclasses import dataclass
 from json import JSONEncoder
 
@@ -261,6 +262,7 @@ class Stat(commands.Cog):
         self.bot = bot
         self.memberInfo = dict()
         self.topList = dict()
+        self.process = psutil.Process()
         self.importBackup()
         self.bg_task_update = self.bot.loop.create_task(self.update_background_task())
         self.bg_task_backup = self.bot.loop.create_task(self.backup_background_task())
@@ -346,7 +348,6 @@ class Stat(commands.Cog):
         await ctx.send("[Error] main.py -> stats() -> Exception: {}".format(error))
 
     async def statscalc(self, ctx, members, showAmount = 5):
-
         try:
             status = ["Online", "Do Not Disturb", "Idle", "Offline"]
             for member in members:  
@@ -414,9 +415,13 @@ class Stat(commands.Cog):
                     embed.url = "https://github.com/Awolize/Awot-Discord-Bot"
                     embed.set_footer(text="~Thats it for this time~")
 
+                    for emoji in self.bot.emojis:
+                        print(emoji)
+
                     embed.add_field(name="Status", value=statusName, inline=True)
-                    embed.add_field(name="Time", value=statusValue + "      ", inline=True)
+                    embed.add_field(name="Time", value=statusValue, inline=True)
                     if gameName:
+                        embed.add_field(name="x", value="x", inline=False)
                         embed.add_field(name="Games", value=gameName, inline=True)
                         embed.add_field(name="Time", value=gameValue, inline=True)
 
@@ -425,6 +430,33 @@ class Stat(commands.Cog):
         except Exception as e:
             print("[Error] main.py -> statscalc() -> Exception: {}".format(e))
             success = False
+
+    @commands.command(name="system", aliases=["sys"])
+    async def system(self, ctx):
+        """
+        Get information about the system the bot is running on.
+        """
+
+        embed = discord.Embed(
+            colour=discord.Color.gold(),
+        )
+        embed.set_author(icon_url=self.bot.user.avatar_url_as(format="png"), name=f"{self.bot.user.name}'s system stats")
+        embed.set_thumbnail(url=self.bot.user.avatar_url_as(format="png"))
+        embed.add_field(name="__**System CPU:**__", value=f"**Cores:** {psutil.cpu_count()}\n"
+                                                          f"**Usage:** {psutil.cpu_percent(interval=0.1)}%\n"
+                                                          f"**Frequency:** {round(psutil.cpu_freq().current, 2)} Mhz")
+        embed.add_field(name="\u200B", value="\u200B")
+        embed.add_field(name="__**System Memory:**__", value=f"**Total:** {round(psutil.virtual_memory().total / 1048576)} mb\n"
+                                                             f"**Used:** {round(psutil.virtual_memory().used / 1048576)} mb\n"
+                                                             f"**Available:** {round(psutil.virtual_memory().available / 1048576)} mb")
+        embed.add_field(name="__**System Disk:**__", value=f"**Total:** {round(psutil.disk_usage('/').total / 1073741824, 2)} GB\n"
+                                                           f"**Used:** {round(psutil.disk_usage('/').used / 1073741824, 2)} GB\n"
+                                                           f"**Free:** {round(psutil.disk_usage('/').free / 1073741824, 2)} GB")
+        embed.add_field(name="\u200B", value="\u200B")
+        embed.add_field(name="__**Process information:**__", value=f"**Memory usage:** {round(self.process.memory_full_info().rss / 1048576, 2)} mb\n"
+                                                                   f"**CPU usage:** {self.process.cpu_percent()}%\n"
+                                                                   f"**Threads:** {self.process.num_threads()}")
+        return await ctx.send(embed=embed)
 
     @commands.command()
     async def updatedatabase(self, ctx):
