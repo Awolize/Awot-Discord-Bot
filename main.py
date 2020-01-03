@@ -280,7 +280,7 @@ class Stat(commands.Cog):
 
         await self.statscalc(ctx, members)
 
-    @commands.command()
+    @commands.command(parent="gamestats")
     async def show(self, ctx, index):
         if len(self.topList[ctx.guild.id]) == 0:
             return
