@@ -418,7 +418,7 @@ class Stat(commands.Cog):
                     embed.add_field(name="**Status**", value=statusName, inline=True)
                     embed.add_field(name="**Time**", value=statusValue, inline=True)
                     if gameName:
-                        embed.add_field(name="x", value="x", inline=False)
+                        embed.add_field(name="\u200B", value="\u200B", inline=False)
                         embed.add_field(name="**Games**", value=gameName, inline=True)
                         embed.add_field(name="**Time**", value=gameValue, inline=True)
 
