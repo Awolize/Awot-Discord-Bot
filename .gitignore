@@ -5,3 +5,4 @@ firestore/serviceAccountKey.json
 *.db
 *.json
 *.out
+config.py
