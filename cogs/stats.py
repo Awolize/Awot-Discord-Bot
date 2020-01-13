@@ -2,20 +2,48 @@ import time
 import asyncpg
 import discord
 from discord.ext import tasks, commands
+from datetime import datetime 
+import sys
+from pympler.asizeof import asizeof
 
+import logging
+log = logging.getLogger(__name__)
+# Create handlers
+c_handler = logging.StreamHandler()
+f_handler = logging.FileHandler('stats.log')
+c_handler.setLevel(logging.WARNING)
+f_handler.setLevel(logging.ERROR)
+
+# Create formatters and add it to handlers
+c_format = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+c_handler.setFormatter(c_format)
+f_handler.setFormatter(f_format)
+
+# Add handlers to the logger
+log.addHandler(c_handler)
+log.addHandler(f_handler)
+# TODO SPOTIFY LIST, most listened to on the server
 
 class Stats(commands.Cog):
     '''
     Stat: handels game time and stats
     '''
 
+    #raise NotImplementedError
+
     def __init__(self, bot):
-        self.bot = bot
+        try:
+            self.bot = bot
+            self.current_activities = {}
+        except Exception as e:
+            print(e)
+        
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        print(f"New member connected.\nName: {member.name}"
-              f"\nAdding to database...")
+        print(f"[{member.guild.name}] New member connected. Name: {member.name}\n"
+              f"Adding to database...")
         await self.add_user(member, member.guild.id)
 
     @commands.Cog.listener()
@@ -27,12 +55,35 @@ class Stats(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"[Stats] Collecting members..")
-        start = time.time()
-        for guild in self.bot.guilds:
-            for member in guild.members:
-                await self.add_user(member, guild.id)
-        print(f"[Stats] Done. ({time.time()-start})")
+        try:
+            start = time.time()
+            for guild in self.bot.guilds:
+                for member in guild.members:
+                    for activity in member.activities:
+                        if activity.name == "Custom Status":
+                            continue
+                        if member.id in self.current_activities:
+                            self.current_activities[member.id].append(activity.name) 
+                        else:
+                            self.current_activities[member.id] = [activity.name]
+            print(f"[Stats] Reading in activities. Done. ({time.time()-start}s)")
+        except Exception as e:
+            log.error(f"[Stats] [Error] on_ready activities: {e}")
+
+        print(f"Member Activity tracker size: {asizeof(self.current_activities) / 1048576} mb")
+
+        try:
+            print(f"[Stats] Comparing members to the database..")
+            start = time.time()
+            # Redundant but shouldnt restart more than one time a month anyways
+            for guild in self.bot.guilds:
+                for member in guild.members:
+                    await self.add_user(member, guild.id)
+            print(f"[Stats] DB init. Done. ({int(time.time()-start)}s)")
+        except Exception as e:
+            print(f"[Stats] [Error] on_ready db: {e}")
+
+
 
     async def add_user(self, member: discord.Member, server_id):
         try:
@@ -45,16 +96,126 @@ class Stats(commands.Cog):
             except Exception as e:
                 print(f"{member}, {member.id}, {member.name}")
 
-    # @commands.command(name="stats", aliases=["stats"])
+    # TODO
+    @commands.Cog.listener()
+    async def on_member_update(self, member_before, member_after):
+        if member_before.bot or member_after.bot:
+            return
+
+        #activity
+        if member_before.activities != member_after.activities:
+            await self.update_activity(member_before, member_after)
+        #status
+        if member_before.status != member_after.status:
+            self.update_status(member_before, member_after)
+
+    async def update_activity(self, member_before, member_after):
+        #ab = member_before.activities
+        #aa = member_after.activities
+
+        ab = []
+        for a in member_before.activities:
+            if a.name == "Custom Status":
+                continue
+            ab.append(a.name)
+        aa = []
+        for a in member_after.activities:
+            if a.name == "Custom Status":
+                continue
+            aa.append(a.name)
+
+        for activity_before in member_before.activities:
+            if activity_before.name == "Custom Status":
+                continue
+            if activity_before.name not in aa:
+
+                if member_before.id in self.current_activities:
+                    if activity_before.name not in self.current_activities[member_before.id]:
+                        continue
+                    else:
+                        self.current_activities[member_before.id].remove(activity_before.name)   
+                
+                # Playing
+                if activity_before.type is discord.ActivityType.playing: 
+                    print(f"{member_before.name}: stopped playing {activity_before.name}. \n"
+                    f"Started at {activity_before.start} and played for {(datetime.utcnow()-activity_before.start).seconds} s")
+                    time = (datetime.utcnow()-activity_before.start).seconds
+                    try:
+                        try:
+                            app_id = activity_before.application_id
+                        except Exception:
+                            app_id = activity_before.name
+
+                        await self.bot.db.add_game(member_before.id, app_id, time)
+                    except Exception as e:
+                        print(f"Error Type:{type(e)}\nError{e}")
+                        pass
+
+                # streaming
+                elif activity_before.type is discord.ActivityType.streaming: 
+                    print(f"{member_before.name}: stopped streaming {activity_before.name}.")
+
+                # listening
+                elif activity_before.type is discord.ActivityType.listening: 
+                    print(f"{member_before.name}: stopped listening to {activity_before.title} by {activity_before.artist}. \n"
+                    f"Started at {activity_before.start} and listened for {(datetime.utcnow()-activity_before.start).seconds} s")
+
+                # watching
+                elif activity_before.type is discord.ActivityType.watching: 
+                    print(f"{member_before.name}: stopped watching {activity_before.name}.")
+
+                # Unknown
+                else:
+                    print(f'[Warning] Unknown activity type: {activity_before.type}')
+
+        for activity_after in member_after.activities:
+            if activity_after.name == "Custom Status":
+                continue
+            if activity_after.name not in ab:
+                
+                if member_after.id in self.current_activities:
+                    if activity_after.name in self.current_activities[member_after.id]:
+                        continue
+                    else:
+                        self.current_activities[member_after.id].append(activity_after.name) 
+                else:
+                    self.current_activities[member_after.id] = [activity_after.name]
+
+                # Playing
+                if activity_after.type is discord.ActivityType.playing: 
+                    print(f"{member_after.name}: started playing {activity_after.name}.")
+                    
+                # streaming
+                elif activity_after.type is discord.ActivityType.streaming: 
+                    print(f"{member_after.name}: started streaming {activity_after.name}.")
+
+                # listening
+                elif activity_after.type is discord.ActivityType.listening: 
+                    print(f"{member_after.name}: started listening to {activity_after.title} by {activity_after.artist}.")
+
+                # watching
+                elif activity_after.type is discord.ActivityType.watching: 
+                    print(f"{member_after.name}: started watching {activity_after.name}.")
+
+                # Unknown
+                else:
+                    print(f'[Warning] Unknown activity type: {activity_after.type}')
+
+
+    def update_status(self, member_before, member_after):
+        pass
+        #print(f'{member_before.name}: {member_before.status} -> {member_after.status}')
+
+    # TODO
     @commands.command(name="stats")
     async def stats(self, ctx, member: discord.Member = None):
-        pass
-
+        raise NotImplementedError
+    
     @stats.error
     async def stats_error(self, ctx, error):
         print("[Error] stats.py -> stats() -> Exception: {}".format(error))
         await ctx.send("[Error] stats.py -> stats() -> Exception: {}".format(error))
-
+    
 
 class Stats0(commands.Cog):
     '''

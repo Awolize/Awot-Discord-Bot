@@ -9,8 +9,10 @@ class Database():
     async def init(self):
         print("--------------------")
         try:
-            self.pool = await asyncpg.create_pool(database=config.DATABASE_DATABASE,
+            self.pool = await asyncpg.create_pool(host=config.DATABASE_HOST,
+                                                  database=config.DATABASE_DATABASE,
                                                   user=config.DATABASE_USER,
+                                                  port=config.DATABASE_PORT,
                                                   password=config.DATABASE_PASSWORD,
                                                   command_timeout=config.DATABASE_TIMEOUT)
             print(f"[DB] Connected to database.")
@@ -50,15 +52,27 @@ class Database():
                     VALUES ( $1 )
                 ''', user_id)
 
-    async def add_games(self, user_id, game):
+    async def add_game(self, user_id, game, time):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                result = await conn.execute(f'''
-                INSERT INTO games (user_id, game)
-                    VALUES ( $1, $2 )
-                ''', user_id, game)
+                try:
+                    result = await conn.execute(f'''
+                    INSERT INTO games (user_id, game, time)
+                        VALUES ( $1, $2, $3 )
+                    ''', user_id, str(game), time)
+                except asyncpg.exceptions.UniqueViolationError:
+                    result = await conn.execute(f'''
+                    UPDATE games 
+                    SET
+                        time = time + $1
+                    WHERE
+                        user_id = $2 AND game = $3
+                    ''', time, user_id, str(game))
+                except Exception as e:
+                    print(f"Error Type:{type(e)}\nError{e}")
 
     # not in use (insecure)
+
     async def set_user_name(self, user_id, name):
         async with self.pool.acquire() as conn:
             async with conn.transaction():

@@ -5,9 +5,9 @@ import os
 import psutil
 import asyncpg
 
-from discord.ext import commands
-import discord
 
+import discord
+from discord.ext import commands
 
 import database_handler as dbh
 import config
@@ -21,6 +21,9 @@ INIT_EXTENSIONS = [
 ]
 
 DESCRIPTION = ""
+
+import logging
+log = logging.getLogger(__name__)
 
 
 class Awot(commands.Bot):
@@ -39,7 +42,6 @@ class Awot(commands.Bot):
         self.owner = 133309367297507329
 
         self.db = dbh.Database()
-        #pool = loop.run_until_complete()
 
         for extension in INIT_EXTENSIONS:
             try:
@@ -53,7 +55,7 @@ class Awot(commands.Bot):
         try:
             super().run(config.DISCORD_TOKEN, reconnect=True)
         except Exception as e:
-            print(e)
+            log.error(f'[Error] [run] {e}')
 
 
 if __name__ == "__main__":

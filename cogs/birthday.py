@@ -24,11 +24,11 @@ class Birthday(commands.Cog):
             print(f"[Error] - [Birthday] - [init] - {e}.")
 
     def cog_unload(self):
-        self.print_birthday.cancel()
+        self.print_birthday.stop()
 
     # Rewrite
     @tasks.loop(hours=24)
-    async def print_birthday(self, ctx):
+    async def print_birthday(self):
         # channel = self.bot.get_channel(channel_id)
         print("printbday")
         print(datetime.datetime.now())
@@ -74,7 +74,7 @@ class Birthday(commands.Cog):
 
         # Calc delta til next BIRTHDAY_PRINT_TIME
         now = time.strftime('%H:%M:%S')
-        delta = (datetime.datetime.strptime(self.BIRTHDAY_PRINT_TIME, '%H:%M:%S') -
+        delta = (datetime.strptime(self.BIRTHDAY_PRINT_TIME, '%H:%M:%S') -
                  datetime.datetime.strptime(now, '%H:%M:%S')).seconds
 
         # sleep until BIRTHDAY_PRINT_TIME
@@ -160,9 +160,9 @@ class Birthday(commands.Cog):
                 return
         try:
             result = await self.bot.db.remove_birthday(member.id, ctx.message.guild.id)
-            await ctx.send("Birthday removed.".format(result))
+            await ctx.send(f"Birthday removed. [{result}]")
         except Exception as e:
-            await ctx.send("Error removing birthday.".format(result))
+            await ctx.send(f"Error removing birthday. [{result}]")
             print(f'Error in remove birthday: {e}')
 
 

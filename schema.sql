@@ -25,7 +25,7 @@ CREATE TABLE status (
   user_id BIGINT NOT NULL,
   online INT NOT NULL DEFAULT 0,
   idle INT NOT NULL DEFAULT 0,
-  busy INT NOT NULL DEFAULT 0,
+  dnd INT NOT NULL DEFAULT 0,
   offline INT NOT NULL DEFAULT 0,
 
   PRIMARY KEY (user_id),
@@ -38,6 +38,16 @@ CREATE TABLE games (
   time INT NOT NULL DEFAULT 0,
 
   PRIMARY KEY (user_id, game),
+  FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+
+CREATE TABLE spotify (
+  user_id BIGINT NOT NULL,
+  name TEXT NOT NULL,
+  counter INT DEFAULT 0,
+
+  PRIMARY KEY (user_id, name),
   FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
