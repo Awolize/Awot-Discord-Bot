@@ -2,76 +2,53 @@ import time
 import asyncpg
 import discord
 from discord.ext import tasks, commands
-from datetime import datetime 
+from datetime import datetime, timedelta
 import sys
 from pympler.asizeof import asizeof
 
 import logging
-log = logging.getLogger(__name__)
-# Create handlers
-c_handler = logging.StreamHandler()
-f_handler = logging.FileHandler('stats.log')
-c_handler.setLevel(logging.WARNING)
-f_handler.setLevel(logging.ERROR)
 
-# Create formatters and add it to handlers
-c_format = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-c_handler.setFormatter(c_format)
-f_handler.setFormatter(f_format)
-
-# Add handlers to the logger
-log.addHandler(c_handler)
-log.addHandler(f_handler)
-# TODO SPOTIFY LIST, most listened to on the server
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.FileHandler("stats.log", encoding="utf-8")
+handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d"))
+logger.addHandler(handler)
 
 class Stats(commands.Cog):
-    '''
+    """
     Stat: handels game time and stats
-    '''
-
-    #raise NotImplementedError
+    """
 
     def __init__(self, bot):
         try:
             self.bot = bot
             self.current_activities = {}
         except Exception as e:
-            print(e)
-        
+            print(f"Could not run __init__. Error: {e}")
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        print(f"[{member.guild.name}] New member connected. Name: {member.name}\n"
-              f"Adding to database...")
+        print(
+            f"[{member.guild.name}] New member connected. Name: {member.name}\n"
+            f"Adding to database...")
         await self.add_user(member, member.guild.id)
 
     @commands.Cog.listener()
+    async def on_user_update(self, before: discord.User, after: discord.User):
+        print(f"[on_user_update] {before} -> {after}")
+        if before.discriminator != after.discriminator:
+            self.bot.db.set_user_name(after.id, str(after))
+
+    @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        print(f"Bot connected to new guild [{guild.name}]")
+        clock = datetime.now().strftime("%H:%M:%S") #local time
+        print(f"[{clock}] Bot connected to guild: {guild.name}")
         print(guild)
-        for member in guild.members:
-            await self.add_user(member, guild.id)
+        await self.init([guild])
 
     @commands.Cog.listener()
     async def on_ready(self):
-        try:
-            start = time.time()
-            for guild in self.bot.guilds:
-                for member in guild.members:
-                    for activity in member.activities:
-                        if activity.name == "Custom Status":
-                            continue
-                        if member.id in self.current_activities:
-                            self.current_activities[member.id].append(activity.name) 
-                        else:
-                            self.current_activities[member.id] = [activity.name]
-            print(f"[Stats] Reading in activities. Done. ({time.time()-start}s)")
-        except Exception as e:
-            log.error(f"[Stats] [Error] on_ready activities: {e}")
-
-        print(f"Member Activity tracker size: {asizeof(self.current_activities) / 1048576} mb")
-
+        await self.init(self.bot.guilds)
         try:
             print(f"[Stats] Comparing members to the database..")
             start = time.time()
@@ -81,9 +58,21 @@ class Stats(commands.Cog):
                     await self.add_user(member, guild.id)
             print(f"[Stats] DB init. Done. ({int(time.time()-start)}s)")
         except Exception as e:
-            print(f"[Stats] [Error] on_ready db: {e}")
+            print(f"[on_ready] [Database] Error: {e}")
 
+    async def init(self, guild: list):
+        try:
+            start = time.time()
+            for guild in self.bot.guilds:
+                for member in guild.members:
+                    await self.bot.db.set_user_name(member.id, str(member))
+                    activities = [item for item in member.activities if int(item.type) != 4]
+                    self.current_activities[member.id] = activities
 
+            print(f"[Stats] Reading in activities. Done. ({time.time()-start}s)")
+
+        except Exception as e:
+            print(f"[on_ready] [init] {e}")
 
     async def add_user(self, member: discord.Member, server_id):
         try:
@@ -92,7 +81,7 @@ class Stats(commands.Cog):
             await self.bot.db.add_status(member.id)
         except asyncpg.exceptions.UniqueViolationError as e:
             try:
-                await self.bot.db.set_user_name(member.id, member.name)
+                await self.bot.db.set_user_name(member.id, str(member))
             except Exception as e:
                 print(f"{member}, {member.id}, {member.name}")
 
@@ -102,628 +91,301 @@ class Stats(commands.Cog):
         if member_before.bot or member_after.bot:
             return
 
-        #activity
+        mb_activities = [item for item in member_before.activities if int(item.type) != 4]
+        member_before.activities = mb_activities
+        ma_activities = [item for item in member_after.activities if int(item.type) != 4]
+        member_after.activities = ma_activities
+
+        # TODO 
+        # Games: done
+        # Spotify: TODO
+
+        # Activity 
         if member_before.activities != member_after.activities:
             await self.update_activity(member_before, member_after)
-        #status
+
+        # TODO
+        # Status: TODO
         if member_before.status != member_after.status:
-            self.update_status(member_before, member_after)
-
+            await self.update_status(member_before, member_after)
+      
     async def update_activity(self, member_before, member_after):
-        #ab = member_before.activities
-        #aa = member_after.activities
+        member_id = member_before.id
 
-        ab = []
-        for a in member_before.activities:
-            if a.name == "Custom Status":
-                continue
-            ab.append(a.name)
-        aa = []
-        for a in member_after.activities:
-            if a.name == "Custom Status":
-                continue
-            aa.append(a.name)
+        # Started something
+        if len(member_before.activities) < len(member_after.activities):
+            if len(member_after.activities) != len(self.current_activities.get(member_id, [])):
+                self.current_activities[member_id] = member_after.activities
 
-        for activity_before in member_before.activities:
-            if activity_before.name == "Custom Status":
-                continue
-            if activity_before.name not in aa:
+                # diff
+                new_act = activity_diff(member_before.activities, member_after.activities)
 
-                if member_before.id in self.current_activities:
-                    if activity_before.name not in self.current_activities[member_before.id]:
-                        continue
-                    else:
-                        self.current_activities[member_before.id].remove(activity_before.name)   
-                
-                # Playing
-                if activity_before.type is discord.ActivityType.playing: 
-                    print(f"{member_before.name}: stopped playing {activity_before.name}. \n"
-                    f"Started at {activity_before.start} and played for {(datetime.utcnow()-activity_before.start).seconds} s")
-                    time = (datetime.utcnow()-activity_before.start).seconds
-                    try:
-                        try:
-                            app_id = activity_before.application_id
-                        except Exception:
-                            app_id = activity_before.name
-
-                        await self.bot.db.add_game(member_before.id, app_id, time)
-                    except Exception as e:
-                        print(f"Error Type:{type(e)}\nError{e}")
+                clock = datetime.now().strftime("%H:%M:%S") #local time
+                if new_act:
+                    if int(new_act.type) == discord.ActivityType.streaming:
+                        print()
                         pass
-
-                # streaming
-                elif activity_before.type is discord.ActivityType.streaming: 
-                    print(f"{member_before.name}: stopped streaming {activity_before.name}.")
-
-                # listening
-                elif activity_before.type is discord.ActivityType.listening: 
-                    print(f"{member_before.name}: stopped listening to {activity_before.title} by {activity_before.artist}. \n"
-                    f"Started at {activity_before.start} and listened for {(datetime.utcnow()-activity_before.start).seconds} s")
-
-                # watching
-                elif activity_before.type is discord.ActivityType.watching: 
-                    print(f"{member_before.name}: stopped watching {activity_before.name}.")
-
-                # Unknown
-                else:
-                    print(f'[Warning] Unknown activity type: {activity_before.type}')
-
-        for activity_after in member_after.activities:
-            if activity_after.name == "Custom Status":
-                continue
-            if activity_after.name not in ab:
-                
-                if member_after.id in self.current_activities:
-                    if activity_after.name in self.current_activities[member_after.id]:
-                        continue
+                    if not isinstance(new_act.start, datetime):
+                        print("not isinstance(new_act.start, datetime)")
                     else:
-                        self.current_activities[member_after.id].append(activity_after.name) 
+                        try:
+                            logger.info(f"[{clock}] {str(member_after):<20} {'':<30} -> {new_act.name} ")
+                        except Exception as e:
+                            pass
+
+        # Stopped something
+        elif len(member_before.activities) > len(member_after.activities):
+            if len(member_after.activities) != len(self.current_activities.get(member_id, [])):
+                self.current_activities[member_id] = member_after.activities
+
+                # diff
+                stopped_act = activity_diff(member_before.activities, member_after.activities)
+
+                if stopped_act:                  
+                    if int(stopped_act.type) == discord.ActivityType.streaming:
+                        print(f"{member_before} Stopped Streaming.")
+                        pass
+                    if not isinstance(stopped_act.start, datetime):
+                        clock = datetime.now().strftime("%H:%M:%S")
+                        print(f"[{clock}] [ERROR] No 'act.start': {stopped_act}")
+                    else:
+                        clock = datetime.now().strftime("%H:%M:%S")
+                        if stopped_act.start > datetime.utcnow():
+                            print(f"[{clock}] [ERROR] act.start > datetime.utcnow() : {stopped_act.start} > {datetime.utcnow()}")
+                            print(stopped_act)
+                        duration = datetime.utcnow()-stopped_act.start
+                        
+                        if stopped_act.type == discord.ActivityType.playing:
+                            await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)
+
+                           
                 else:
-                    self.current_activities[member_after.id] = [activity_after.name]
-
-                # Playing
-                if activity_after.type is discord.ActivityType.playing: 
-                    print(f"{member_after.name}: started playing {activity_after.name}.")
-                    
-                # streaming
-                elif activity_after.type is discord.ActivityType.streaming: 
-                    print(f"{member_after.name}: started streaming {activity_after.name}.")
-
-                # listening
-                elif activity_after.type is discord.ActivityType.listening: 
-                    print(f"{member_after.name}: started listening to {activity_after.title} by {activity_after.artist}.")
-
-                # watching
-                elif activity_after.type is discord.ActivityType.watching: 
-                    print(f"{member_after.name}: started watching {activity_after.name}.")
-
-                # Unknown
-                else:
-                    print(f'[Warning] Unknown activity type: {activity_after.type}')
-
-
-    def update_status(self, member_before, member_after):
-        pass
-        #print(f'{member_before.name}: {member_before.status} -> {member_after.status}')
-
-    # TODO
-    @commands.command(name="stats")
-    async def stats(self, ctx, member: discord.Member = None):
-        raise NotImplementedError
-    
-    @stats.error
-    async def stats_error(self, ctx, error):
-        print("[Error] stats.py -> stats() -> Exception: {}".format(error))
-        await ctx.send("[Error] stats.py -> stats() -> Exception: {}".format(error))
-    
-
-class Stats0(commands.Cog):
-    '''
-    Stat: handels game time and stats 
-    '''
-
-    def __init__(self, bot):
-        self.bot = bot
-        self.memberInfo = dict()
-        self.topList = dict()
-        self.importBackup()
-        self.bg_task_update = self.bot.loop.create_task(
-            self.update_background_task())
-        self.bg_task_backup = self.bot.loop.create_task(
-            self.backup_background_task())
-        self.bg_task_db_update = self.bot.loop.create_task(
-            self.update_database_background_task())
-
-    # ------------------------------------------
-
-    @commands.has_permissions(administrator=True)
-    @commands.command()
-    async def allstats(self, ctx):
-        '''            
-        Shows everyones stats.
-        '''
-        members = []
-        for member in ctx.guild.members:
-            members.append(member)
-
-        await self.statscalc(ctx, members)
-
-    @commands.command(parent="gamestats")
-    async def show(self, ctx, index):
-        if len(self.topList[ctx.guild.id]) == 0:
-            return
-
-        if index.isdigit() == False:
-            return
-
-        if int(index) < 1 or int(index) > len(self.topList[ctx.guild.id])+1:
-            return
-
-        status = ["Online", "Do Not Disturb", "Idle", "Offline"]
-
-        games = dict()
-        for member in ctx.guild.members:
-            if member.id in self.memberInfo[ctx.guild.id]:
-                try:
-                    games[member.name] = self.memberInfo[ctx.guild.id][member.id].games[self.topList[ctx.guild.id][int(
-                        index)-1]]
-                except:
+                    get_activity_by_type()
+                    stopped_act.type == discord.ActivityType.listening:
+                    print(f"start:    {stopped_act.start.hour}:{stopped_act.start.minute}:{stopped_act.start.second}")
+                    print(f"end:      {stopped_act.end.hour}:{stopped_act.end.minute}:{stopped_act.end.second}")
+                    print(f"length:   {stopped_act.duration.seconds} s")
+                    print(f"duration: {duration.seconds} s")
+                    print()
                     pass
+                    #await self.bot.db.add_song(stopped_act.title, stopped_act.album, stopped_act.artist, stopped_act.track_id, stopped_act.duration.seconds, duration)
 
-        sorted_games = [(k, games[k])
-                        for k in sorted(games, key=games.get, reverse=True)]
+                        logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} <- {'':<30} (Duration: {duration.seconds:>6} s)")
+        # Something Changed
+        elif len(member_before.activities) == len(member_after.activities):
 
-        personName = ""
-        gameTime = ""
-        counter = 0
+            if activity_same(self.current_activities.get(member_id, []), member_before.activities):
+                self.current_activities[member_id] = member_after.activities
+                # old activity
+                stopped_act = activity_diff(member_after.activities, member_before.activities)
+                # new activity
+                started_act = activity_diff(member_before.activities, member_after.activities)
 
-        # for key in games.keys():
-        for person, time in sorted_games:
-            counter += 1
-            personName += "{} \n".format(person)
-            if time/3600 < 10:
-                gameTime += "{:.1f} h\n".format(time/3600)
-            else:
-                gameTime += "{:.0f} h\n".format(time/3600)
-            if counter == 10:
-                break
+                if stopped_act and started_act:
 
-        if personName == "":
-            personName = "No games on record"
-            gameTime = ":slight_frown:"
+                    clock = datetime.now().strftime("%H:%M:%S")
+                    stop_start_clock = stopped_act.start.strftime("%H:%M:%S")
+                    start_start_clock= started_act.start.strftime("%H:%M:%S")
 
-        embed = discord.Embed(
-            title=self.topList[ctx.guild.id][int(index)-1], color=0x1016fe)
-        # embed.set_author(name=)
-        # embed.set_thumbnail(url=self.bot.avatar_url)
-        embed.add_field(name="Top", value=personName, inline=True)
-        embed.add_field(name="Time", value=gameTime, inline=True)
-        embed.timestamp = datetime.datetime.utcnow()
-        embed.set_footer(text="~Thats it for this time~")
-        await ctx.send(embed=embed)
+                    if int(stopped_act.type) == 0:
+                        if stopped_act.start > datetime.utcnow():
+                            print("wtf is going on")
+                            print(stopped_act)
+                        duration = datetime.utcnow()-stopped_act.start
+                        await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)
+                    logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} -> {started_act.name:<30} (Duration: {duration.seconds:>6} s)")
 
-    @commands.command()
-    async def stats(self, ctx, member: discord.Member, showAmount=5):
-        '''            
-        Shows game time.
-        '''
-        members = []
-        members.append(member)
+                # something updated
+                else:
+                    
+                    member_before.activities.sort(key=lambda a: a.type, reverse=True)
+                    member_after.activities.sort(key=lambda a: a.type, reverse=True)
 
-        await self.statscalc(ctx, members, showAmount)
+                    for i in range(len(member_before.activities)):
+                        act1 = member_before.activities[i]
+                        act2 = member_after.activities[i]
 
-    @stats.error
-    async def stats_error(self, ctx, error):
-        print("[Error] stats.py -> stats() -> Exception: {}".format(error))
-        await ctx.send("[Error] stats.py -> stats() -> Exception: {}".format(error))
-
-    async def statscalc(self, ctx, members, showAmount=5):
-        try:
-            status = ["Online", "Do Not Disturb", "Idle", "Offline"]
-            for member in members:
-                if member.id in self.memberInfo[ctx.guild.id]:
-                    statusName = ""
-                    statusValue = ""
-                    totalActiveTime = 0
-                    for activity in self.memberInfo[ctx.guild.id][member.id].status:
-                        time = self.memberInfo[ctx.guild.id][member.id].status[activity]
-                        if time/3600 < 10:
-                            statusValue += "{:.1f} h\n".format(time/3600)
-                        else:
-                            statusValue += "{:.0f} h\n".format(time/3600)
-
-                        statusName += "{}\n".format(str(activity))
-                        if activity != "Offline":
-                            totalActiveTime += self.memberInfo[ctx.guild.id][member.id].status[activity]
-
-                    if totalActiveTime == 0:
-                        continue
-
-                    games = self.memberInfo[ctx.guild.id][member.id].games
-                    games = [(k, games[k]) for k in sorted(
-                        games, key=games.get, reverse=True)]
-                    gameName = ""
-                    gameValue = ""
-                    counter = 0
-                    for activity in games:
-                        if counter == showAmount:
-                            break
-                        time = activity[1]
-                        if time/3600 < 10:
-                            gameValue += "{:.1f} h\n".format(time/3600)
-                        else:
-                            gameValue += "{:.0f} h\n".format(time/3600)
-                        gameName += "{}\n".format(activity[0])
-                        counter += 1
-
-                    description = "-------------------------------------------------\nShows {}'s game time, top {} games, yes.\n\n{} joined at {:.19}.\n".format(
-                        member.mention, showAmount, member.name, str(member.joined_at))
-
-                    # adds birthday to the stats card
-                    date = dbh.getBirthdayByID(member.id, ctx.message.guild.id)
-
-                    if date:
-                        day = date[0][0]
-                        month = date[0][1]
-                        year = date[0][2]
-
-                        if year is 0:
-                            birthday = "Birthday at {}/{}.".format(day, month)
-                        else:
-                            birthday = "Birthday at {}-{}-{}.".format(
-                                day, month, year)
-
-                        description = description + birthday + "\n"
-                    # --------------------------------
-
-                    description = description + "-------------------------------------------------"
-
-                    embed = discord.Embed(title="Awot GitHub link")
-                    embed.set_author(name=member)
-                    embed.set_thumbnail(url=member.avatar_url)
-                    embed.description = description
-                    embed.color = 0x1016fe
-                    embed.timestamp = datetime.datetime.utcnow()
-                    embed.url = "https://github.com/Awolize/Awot-Discord-Bot"
-                    embed.set_footer(text="~Thats it for this time~")
-
-                    embed.add_field(name="**Status**",
-                                    value=statusName, inline=True)
-                    embed.add_field(name="**Time**",
-                                    value=statusValue, inline=True)
-                    if gameName:
-                        embed.add_field(name="x", value="x", inline=False)
-                        embed.add_field(name="**Games**",
-                                        value=gameName, inline=True)
-                        embed.add_field(name="**Time**",
-                                        value=gameValue, inline=True)
-
-                    await ctx.send(embed=embed)
-
-        except Exception as e:
-            print("[Error] stats.py -> statscalc() -> Exception: {}".format(e))
-            success = False
-
-    @commands.command()
-    async def updatedatabase(self, ctx):
-        msg = await ctx.send("Updating firebase with the current data...")
-        self.updateDatabase()
-        await msg.edit(content="Updating firebase with the current data... Done")
-
-    @commands.command()
-    async def gamestats(self, ctx):
-        status = ["Online", "Do Not Disturb", "Idle", "Offline"]
-        games = dict()
-        for member in ctx.guild.members:
-            if member.id in self.memberInfo[ctx.guild.id]:
-                for activity in self.memberInfo[ctx.guild.id][member.id].games:
-                    time = self.memberInfo[ctx.guild.id][member.id].games[activity]
-                    if activity not in games:
-                        games[activity] = time
-                    elif activity in games:
-                        games[activity] += time
-
-        sorted_games = [(k, games[k])
-                        for k in sorted(games, key=games.get, reverse=True)]
-
-        self.topList[ctx.guild.id] = list()
-        for x in sorted_games:
-            self.topList[ctx.guild.id].append(x[0])
-        self.topList[ctx.guild.id] = self.topList[ctx.guild.id][:10]
-
-        gamePlacement = ""
-        gameName = ""
-        gameValue = ""
-        counter = 0
-
-        for game, time in sorted_games:
-            counter += 1
-            # gamePlacement += "{}\n".format(counter)
-            gameName += "{} \n".format(game)
-            if time/3600 < 10:
-                gameValue += "{:.1f} h\n".format(time/3600)
-            else:
-                gameValue += "{:.0f} h\n".format(time/3600)
-            if counter == 10:
-                break
-
-        if gameName == "":
-            gamePlacement = ":/"
-            gameName = "No games on record"
-            gameValue = ":slight_frown:"
-
-        description = "-------------------------------------------------\nHello:)\n-------------------------------------------------".format(
-        )
-        embed = discord.Embed(title="All time stats",
-                              description=description, color=0x1016fe)
-        # embed.set_author(name=)
-        # embed.set_thumbnail(url=self.bot.avatar_url)
-        # embed.add_field(name="Top", value=gamePlacement, inline=True)
-        embed.add_field(name="Games", value=gameName, inline=True)
-        embed.add_field(name="Time", value=gameValue, inline=True)
-        embed.timestamp = datetime.datetime.utcnow()
-        embed.set_footer(text="~Thats it for this time~")
-        await ctx.send(embed=embed)
-
-    async def getMembersInfo(self):
-        try:
-            for server in self.bot.guilds:
-                if server.id not in self.memberInfo:
-                    self.memberInfo[server.id] = dict()
-
-                for member in server.members:
-                    if member.bot:
-                        continue
-
-                    name = member.id
-
-                    if name not in self.memberInfo[server.id]:
-                        if member.status == discord.Status.online or member.status == discord.Status.idle or member.status == discord.Status.dnd:
-                            self.memberInfo[server.id][name] = MyMember(
-                                list(), dict(), dict())
-                            self.memberInfo[server.id][name].names.insert(
-                                0, str(member))
-                            self.memberInfo[server.id][name].status["Online"] = 0
-                            self.memberInfo[server.id][name].status["Idle"] = 0
-                            self.memberInfo[server.id][name].status["Do Not Disturb"] = 0
-                            self.memberInfo[server.id][name].status["Offline"] = 0
-                        else:
+                        if act1.type != act2.type:
+                            print("how?")
                             continue
 
-                    if str(member) not in self.memberInfo[server.id][name].names:
-                        self.memberInfo[server.id][name].names.insert(
-                            0, str(member))
+                        # Spotify changes
+                        if act1.type == discord.ActivityType.listening:
+                            print()
+                            pass
 
-                    if member.status == discord.Status.online:
-                        self.memberInfo[server.id][name].status["Online"] += update_frequency
-                    elif member.status == discord.Status.idle:
-                        self.memberInfo[server.id][name].status["Idle"] += update_frequency
-                    elif member.status == discord.Status.dnd:
-                        self.memberInfo[server.id][name].status["Do Not Disturb"] += update_frequency
-                    elif member.status == discord.Status.offline:
-                        self.memberInfo[server.id][name].status["Offline"] += update_frequency
+                        pass
+                    if False: #listening to song: if spotify before and after -> if song name changes -> save finished
+                        pass
+                    else:
+                        pass
+                    #print(f"Updated something.")
+                pass
 
-                    if member.status == discord.Status.online or member.status == discord.Status.dnd:
-                        if member.activity is not None:
-                            if str(member.activity.name) in self.memberInfo[server.id][name].games:
-                                self.memberInfo[server.id][name].games[str(
-                                    member.activity.name)] += update_frequency
-                            else:
-                                self.memberInfo[server.id][name].games[str(
-                                    member.activity.name)] = update_frequency
-
-        except Exception as e:
-            print("getMembersInfo: Exception: {}".format(e))
-            pass
-
-    def performBackup(self):
-
-        # remove removed accounts
-        removeUserList = []
-        for serverID, usersInfo in self.memberInfo.items():
-            # serverID = unique_id
-            for userID, myMember in usersInfo.items():
-                # Check if valid userID
-                if self.bot.get_user(userID) is None:
-                    print("User id not valid: {}".format(userID))
-                    removeUser = {"server": serverID, "user": userID}
-                    removeUserList.append(removeUser)
-
-        for userDict in removeUserList:
-            del self.memberInfo[userDict["server"]][userDict["user"]]
-
-        # Save to json
-        with open('stats_backup.json', 'w') as write_file:
-            json.dump(self.memberInfo, write_file, cls=MemberEncoder, indent=4)
-
-    def updateDatabase(self):
-        # Save to database
-        gsDB = gameStatsDBh.GameStatsDB()
-        firestoreHandler = FH.FirestoreHandler()
-
-        for serverID, usersInfo in self.memberInfo.items():
-            # serverID = unique_id
-            for userID, myMember in usersInfo.items():
-                # Check if valid userID
-                if self.bot.get_user(userID) is None:
-                    print("User id not valid: {}".format(userID))
-                    continue
-                # userID = unique_id
-                # users.games (dict)
-                # users.names (List)
-                # users.status (dict)
-
-                # Add user if user doesn't exist
-                # check if user exists
-                if not gsDB.get_user(user_id=userID)[0]:
-                    user = self.bot.get_user(userID)
-                    if user:
-                        # adds if doesn't exist
-                        gsDB.add_user(userID, serverID, str(user))
-
-                # Add server to users
-                gsDB.add_server_to_user(userID, serverID)
-
-                # Update Status counters
-                statusList = list()
-
-                for key, value in myMember.status.items():
-                    statusList.append(value)
-
-                gsDB.add_status_time_to_user_id(userID, statusList)
-
-                # Update nicknames
-                gsDB.add_nicknames_to_user(userID, myMember.names)
-
-                # Add games and update time
-                gamesList = list()
-                gameListFirebase = list()
-
-                for key, value in myMember.games.items():
-                    gamesList.append((key, value))
-                    gameListFirebase.append({"id": key, "time": value})
-
-                gsDB.update_games_by_user_id(userID, gamesList)
-                userobj = self.bot.get_user(userID)
-                firestoreHandler.main(str(userID), myMember.names, statusList, gameListFirebase, userobj.name, str(
-                    userobj.avatar_url_as(static_format='png', size=512)))
-
-                server = self.bot.get_guild(serverID)
-                firestoreHandler.addServersToUsers(str(userID), server.id, server.name, str(
-                    server.icon_url_as(static_format='png', size=512)))
-
-        for serverId, serverInfo in self.memberInfo.items():
-            userList = list()
-            for userId, userInfo in serverInfo.items():
-                userobj = self.bot.get_user(userId)
-                userList.append({"id": str(userId), "name": userobj.name})
-            server = self.bot.get_guild(serverId)
-            firestoreHandler.addServers(str(server.id), server.name, str(
-                server.icon_url_as(static_format='png', size=512)), userList)
-
-        firestoreHandler.addServersToUsers_done()
-
-        firestoreHandler.commit()
-        gsDB.commit()
-        pass
-
-    def importBackup(self):
-        try:
-            # Json solution
-            ttime = time.time()
-            with open('stats_backup.json', 'r') as f:
-                json_data = json.load(f)
-
-            for server in json_data.keys():
-                self.memberInfo[int(server)] = dict()
-                for member in json_data[server].keys():
-                    self.memberInfo[int(server)][int(member)] = MyMember(list(json_data[server][member]["names"]), dict(
-                        json_data[server][member]["status"]), dict(json_data[server][member]["games"]))
-            print("[Json] Import backup took: {0:.3f}s".format(
-                time.time() - ttime))
-
-            # Database solution
-            # Populate usersdict with users and their information
-            ttime = time.time()
-            gsDB = gameStatsDBh.GameStatsDB()
-            self.userDict = dict()
-            users = gsDB.get_all_users()[1]
-
-            for user in users:
-                user = user[0]
-
-                self.userDict[user] = UserStruct(
-                    user, list(), dict(), dict(), list())
-
-                # Game stats
-                gameList = gsDB.get_all_games(user)[1]
-                for gameName, gameTime in gameList:
-                    self.userDict[user].games[gameName] = gameTime
-
-                # Status stats
-                statusTuple = gsDB.get_all_status(user)[1]
-                self.userDict[user].status["online"] = statusTuple[0]
-                self.userDict[user].status["idle"] = statusTuple[1]
-                self.userDict[user].status["busy"] = statusTuple[2]
-                self.userDict[user].status["offline"] = statusTuple[3]
-
-                # Usernames
-                nameList = gsDB.get_all_nicknames(user)[1]
-                templist = list()
-                for name in nameList:
-                    templist.append(name[0])
-                self.userDict[user].names = templist
-
-                # Servers
-                nameList = gsDB.get_all_servers(user)[1]
-                templist = list()
-                for name in nameList:
-                    templist.append(name[0])
-                self.userDict[user].servers = templist
-            # --------------------------------------------------------
-
-            print("[DB] Import backup took: {0:.3f}s".format(
-                time.time() - ttime))
-
-        except Exception as e:
-            print("[Error] stats.py -> importBackup() -> Exception: {}".format(e))
-
-    async def backup_background_task(self):
-        await self.bot.wait_until_ready()
-        channel = self.bot.get_channel(channel_id)  # channel ID goes here
-        while not self.bot.is_closed():
-            await asyncio.sleep(backup_frequency)
-            print("[{}] Automatic backup initiated...".format(
-                datetime.datetime.now().strftime('%H:%M:%S')))
-            self.performBackup()
-
-    async def update_database_background_task(self):
-        await self.bot.wait_until_ready()
-        while not self.bot.is_closed():
-            await asyncio.sleep(backupDatabase_frequency)
-            self.updateDatabase()
-
-    async def update_background_task(self):
-        await self.bot.wait_until_ready()
-        channel = self.bot.get_channel(channel_id)  # channel ID goes here
-        while not self.bot.is_closed():
-            await self.getMembersInfo()
-            await asyncio.sleep(update_frequency)  # task runs every 60 seconds
-
-    @commands.command()
-    async def save(self, ctx):
-        '''        
-        Saves all the stats manually.
-        '''
-
-        msg = await ctx.send("Saving data...")
-        print("Performs backup!")
-
-        self.performBackup()
-
-        members = 0
-        for server in self.memberInfo.keys():
-            members += len(self.memberInfo[server])
-
-        servers_str = "Number of servers: {}.".format(len(self.memberInfo))
-        members_str = "Number of members: {}.".format(members)
-
-        print("{}\n{}".format(servers_str, members_str))
-        await msg.edit(content="Saving data...\n{}\n{}".format(servers_str, members_str))
-
-    @commands.command()
-    async def test(self, ctx, member: discord.Member = None):
-        if member is None:
-            member = ctx.author
-
-        isAdmin = member.permissions_in(ctx.channel).administrator
-
-        if isAdmin:
-            pass
-            # msg = await ctx.send("Admin")
         else:
-            pass
-            # msg = await ctx.send("Not admin")
+            print(f"What happened??. {member_before.activities} - {member_after.activities}")
+
+        self.current_activities[member_id] = member_after.activities
+
+    async def update_status(self, member_before, member_after):
+        return
+
+        if member_after.status == discord.Status.offline:
+            if member_before.id in self.current_activities:
+                print(f"{member_before.name} went offline, Saving...")
+
+                for activity in member_before.activities:
+                    # playing
+                    if activity_before.type is discord.ActivityType.playing:
+                        time = (datetime.utcnow() -
+                                activity_before.start).seconds
+
+                        app_id = self.current_activities[member_before.id][int(
+                            discord.ActivityType.playing)]
+
+                        await self.bot.db.add_game(member_before.id, app_id,
+                                                   time)
+
+                del self.current_activities[member_before.id]
+
+    async def stats_embedd(self, ctx, title:str, author:str, thumbnail_url:str, members: list, limit = 10):
+
+        rows = await self.bot.db.get_most_played_game(tuple(members), limit)
+        games = {}
+        for row in rows:
+            if "game" in row and "play_time" in row:
+                game = row["game"]
+                time = row["play_time"]
+
+                if game in games:
+                    games[game] += timedelta(seconds=time) 
+                else:
+                    games[game] = timedelta(seconds=time)
+
+        sorted_games = sorted(games, key=games.get, reverse=True)
+
+        string_games = ""
+        string_played_time = ""
+
+        for game in sorted_games:
+            
+            hours = games[game].total_seconds()/3600
+
+            if hours < 10:
+                hours = round(hours, 1)
+            else:
+                hours = int(round(hours, 0))
+
+            string_games += f"{game}\n"
+            string_played_time += f"{hours}\n"
+
+
+        embed = discord.Embed   (title= title, color=0x1016FE)
+        embed.set_author        (name = author)
+        embed.set_thumbnail     (url  = thumbnail_url)
+        embed.add_field(name="Game Name",       value=string_games,       inline=True)
+        embed.add_field(name="Time Played (h)", value=string_played_time, inline=True)
+        embed.timestamp = ctx.message.created_at
+        embed.set_footer(text="~ Thats it for this time ~")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="stats")
+    async def _stats(self, ctx, member: discord.Member = None, limit: int = 10):
+        '''
+        Shows most played games on the server or by a member by tagging them.
+        
+        Examples:
+        stats @name 5  will display the 5  most played games by the user.
+        stats          will display the 10 most played games on the server.
+        '''
+        if member:
+            if member.bot:
+                return
+
+            title = f"List of the most played games"
+            author= f"~~ {str(member)} ~~"
+            thumbnail_url = member.avatar_url
+
+            await self.stats_embedd(ctx, title, author, thumbnail_url, [member.id], limit)
+            
+
+        else:
+            members = []
+
+            for member in ctx.guild.members:
+                if not member.bot:
+                    members.append(member.id)
+
+            title = f"List of the most played games on the server"
+            author= f"~~ {str(ctx.guild.name)} ~~"
+            thumbnail_url = ctx.guild.icon_url
+
+            await self.stats_embedd(ctx, title, author, thumbnail_url, members, 15)  
+    
+    @_stats.error
+    async def _stats_error(self, ctx, error):
+        print("[Error] stats.py -> stats() -> Exception: {}".format(error))
+        await ctx.send(
+            "[Error] stats.py -> stats() -> Exception: {}".format(error))
+
+def get_activity_by_type(list1, type : discord.ActivityType):
+    for act in list1:
+        if act.type == type:
+            return act
+
+    return None
+
+def activity_same(list1, list2):
+    try:
+        list1_names = []
+        for act in list1:
+            if int(act.type) != 4:
+                list1_names.append(act.name)
+        list2_names = []
+        for act in list2:
+            if int(act.type) != 4:
+                list2_names.append(act.name)
+
+        if list1_names == list2_names: 
+            return True
+        return False
+    except Exception as e:
+        print(f"[ERROR] - [activity_diff] - {e}")
+        return False
+
+# based on names
+def activity_diff(list1, list2):
+    try:
+        # Get names from the items
+        list1_names = []
+        for act in list1:
+            if int(act.type) != 4:
+                list1_names.append(act.name)
+        list2_names = []
+        for act in list2:
+            if int(act.type) != 4:
+                list2_names.append(act.name)
+
+
+        # Get unique items
+        diff_names = list(set(list2_names) - set(list1_names))
+        compare_list = list2
+        
+        if not diff_names:
+            compare_list = list1
+            diff_names = list(set(list1_names) - set(list2_names))
+        
+        # Get information about the unique items
+        diff = None
+        for act in compare_list:
+            if act.name in diff_names:
+                diff = act
+                break
+
+        return diff
+    except Exception as e:
+        print(f"[ERROR] - [activity_diff] - {e}")
+        return None
 
 
 def setup(bot):

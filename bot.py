@@ -5,12 +5,17 @@ import os
 import psutil
 import asyncpg
 
-
 import discord
 from discord.ext import commands
 
 import database_handler as dbh
 import config
+
+# TODO SPOTIFY LIST, most listened to on the server
+# TODO how do i set prefix per server? -> ?tag callable prefix
+
+# @commands.has_permissions(administrator=True)
+# raise NotImplementedError
 
 INIT_EXTENSIONS = [
     "cogs.birthday",

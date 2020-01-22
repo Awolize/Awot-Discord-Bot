@@ -52,31 +52,51 @@ class Database():
                     VALUES ( $1 )
                 ''', user_id)
 
+    async def get_most_played_game(self, users:tuple, limit=15):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    result = await conn.fetch('''
+                    SELECT 
+                        game, sum(play_time) as play_time
+                    FROM games 
+                        WHERE user_id = any($1::BIGINT[])
+                        GROUP BY game order by sum(play_time) DESC limit $2;
+                    ''', users, limit)
+                    return result
+        except Exception as e:
+            print(e)
+            pass
+
+    async def get_game_by_id(self, user_id):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetch('''
+                    Select 
+                        game, play_time 
+                    FROM games 
+                        where user_id = $1
+                ''', user_id)
+                return result
+
     async def add_game(self, user_id, game, time):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                try:
-                    result = await conn.execute(f'''
-                    INSERT INTO games (user_id, game, time)
-                        VALUES ( $1, $2, $3 )
-                    ''', user_id, str(game), time)
-                except asyncpg.exceptions.UniqueViolationError:
-                    result = await conn.execute(f'''
-                    UPDATE games 
-                    SET
-                        time = time + $1
-                    WHERE
-                        user_id = $2 AND game = $3
-                    ''', time, user_id, str(game))
-                except Exception as e:
-                    print(f"Error Type:{type(e)}\nError{e}")
-
-    # not in use (insecure)
+                result = await conn.execute('''
+                    INSERT INTO games 
+                        (user_id, game, play_time) 
+                    VALUES 
+                        ( $1, $2, $3 ) 
+                    
+                    ON CONFLICT (user_id, game) DO UPDATE
+                        SET 
+                            play_time = games.play_time + $3 
+                ''', user_id, str(game), time)
 
     async def set_user_name(self, user_id, name):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                result = await conn.execute(f'''
+                result = await conn.execute('''
                 UPDATE users
                 SET
                     name = $1

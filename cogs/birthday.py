@@ -2,11 +2,9 @@ from datetime import datetime
 import time
 import asyncio
 import asyncpg
-
 import discord
 from discord.ext import tasks, commands
 
-# rewrite
 import database_handler as dbh
 
 
@@ -31,7 +29,7 @@ class Birthday(commands.Cog):
     async def print_birthday(self):
         # channel = self.bot.get_channel(channel_id)
         print("printbday")
-        print(datetime.datetime.now())
+        print(datetime.now())
 
         for server in self.bot.guilds:
 
@@ -44,7 +42,7 @@ class Birthday(commands.Cog):
                 print(row)
                 dates.append((row[0], f"{row[1]}"))
 
-            currentYear = datetime.datetime.now().year
+            currentYear = datetime.now().year
             for memberID, memberInfo in dates:
 
                 member = bot.get_user(memberID)
@@ -75,7 +73,7 @@ class Birthday(commands.Cog):
         # Calc delta til next BIRTHDAY_PRINT_TIME
         now = time.strftime('%H:%M:%S')
         delta = (datetime.strptime(self.BIRTHDAY_PRINT_TIME, '%H:%M:%S') -
-                 datetime.datetime.strptime(now, '%H:%M:%S')).seconds
+                 datetime.strptime(now, '%H:%M:%S')).seconds
 
         # sleep until BIRTHDAY_PRINT_TIME
         await asyncio.sleep(delta)

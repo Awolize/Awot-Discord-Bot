@@ -35,7 +35,7 @@ CREATE TABLE status (
 CREATE TABLE games (
   user_id BIGINT NOT NULL,
   game TEXT NOT NULL,
-  time INT NOT NULL DEFAULT 0,
+  play_time INT NOT NULL DEFAULT 0,
 
   PRIMARY KEY (user_id, game),
   FOREIGN KEY (user_id) REFERENCES users(user_id)
