@@ -22,17 +22,16 @@ CREATE TABLE servers(
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
-CREATE TABLE status
-  (
-     user_id    BIGINT NOT NULL,
-     online     INT NOT NULL DEFAULT 0,
-     idle       INT NOT NULL DEFAULT 0,
-     dnd        INT NOT NULL DEFAULT 0,
-     offline    INT NOT NULL DEFAULT 0,
+CREATE TABLE status(
+    user_id    BIGINT NOT NULL,
+    online     INT NOT NULL DEFAULT 0,
+    idle       INT NOT NULL DEFAULT 0,
+    dnd        INT NOT NULL DEFAULT 0,
+    offline    INT NOT NULL DEFAULT 0,
 
-     PRIMARY KEY (user_id),
-     FOREIGN KEY (user_id) REFERENCES users(user_id)
-  );
+    PRIMARY KEY (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
 
 CREATE TABLE games(
     user_id     BIGINT NOT NULL,
