@@ -44,15 +44,15 @@ CREATE TABLE games(
 
 SET timezone = 'utc';
 CREATE TABLE spotify(
-    user_id         BIGINT NOT NULL,
-    title           TEXT NOT NULL,
-    album           TEXT NOT NULL,
-    artist          TEXT NOT NULL,
-    track_id        TEXT NOT NULL,
-    song_length     INT NOT NULL,
-    play_time       INT DEFAULT 0,
+    user_id         BIGINT  NOT NULL,
+    title           TEXT    NOT NULL,
+    album           TEXT    NOT NULL,
+    artist          TEXT    NOT NULL,
+    track_id        TEXT    NOT NULL,
+    song_length     INT     NOT NULL,
+    play_time       INT     DEFAULT 0,
     t               TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP(0),
-    album_cover_url TEXT NOT NULL,
+    album_cover_url TEXT    NOT NULL,
 
     PRIMARY KEY (user_id, track_id, t),
     FOREIGN KEY (user_id) REFERENCES users(user_id)
