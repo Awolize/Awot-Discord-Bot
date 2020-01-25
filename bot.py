@@ -4,6 +4,7 @@ import json
 import os
 import psutil
 import asyncpg
+from datetime import datetime
 
 import discord
 from discord.ext import commands
@@ -27,10 +28,6 @@ INIT_EXTENSIONS = [
 
 DESCRIPTION = ""
 
-import logging
-log = logging.getLogger(__name__)
-
-
 class Awot(commands.Bot):
 
     def __init__(self):
@@ -40,9 +37,8 @@ class Awot(commands.Bot):
             reconnect=True,
         )
         self.process = psutil.Process(os.getpid())
-        self.start_time = time.time()
+        self.start_time = datetime.now()
         self.config = config
-        self.custom_status = ""
         self.status = ""
         self.owner = 133309367297507329
 
@@ -60,7 +56,7 @@ class Awot(commands.Bot):
         try:
             super().run(config.DISCORD_TOKEN, reconnect=True)
         except Exception as e:
-            log.error(f'[Error] [run] {e}')
+            print(f'[Error] [run] {e}')
 
 
 if __name__ == "__main__":

@@ -4,15 +4,26 @@ import discord
 from discord.ext import tasks, commands
 from datetime import datetime, timedelta
 import sys
-from pympler.asizeof import asizeof
 
 import logging
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.FileHandler("stats.log", encoding="utf-8")
+stat_logger = logging.getLogger("Stat Logger")
+stat_logger.setLevel(logging.INFO)
+handler = logging.FileHandler("Stats.log", encoding="utf-8")
 handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d"))
-logger.addHandler(handler)
+stat_logger.addHandler(handler)
+
+status_logger = logging.getLogger("Status Logger")
+status_logger.setLevel(logging.INFO)
+handler = logging.FileHandler("Status.log", encoding="utf-8")
+handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d"))
+status_logger.addHandler(handler)
+
+song_logger = logging.getLogger("Spotify Logger")
+song_logger.setLevel(logging.INFO)
+handler = logging.FileHandler("Spotify.log", encoding="utf-8")
+handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d"))
+song_logger.addHandler(handler)
 
 class Stats(commands.Cog):
     """
@@ -22,7 +33,8 @@ class Stats(commands.Cog):
     def __init__(self, bot):
         try:
             self.bot = bot
-            self.current_activities = {}
+            self.current_songs = {}
+            self.member_main_guild = {}
         except Exception as e:
             print(f"Could not run __init__. Error: {e}")
 
@@ -34,10 +46,20 @@ class Stats(commands.Cog):
         await self.add_user(member, member.guild.id)
 
     @commands.Cog.listener()
+    async def on_member_remove(self, member):
+        # was the guild that the user left the main guild of this member?
+        if self.member_main_guild[member_id] == member.guild.id:
+            del self.member_main_guild[member_id]
+
+        print(f"[{member.guild.name}] Guild removed Member. {member.name}\n")
+
+    @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
-        print(f"[on_user_update] {before} -> {after}")
         if before.discriminator != after.discriminator:
+            print(f"[on_user_update] {before} -> {after}")
             self.bot.db.set_user_name(after.id, str(after))
+        else:
+            print(f"[on_user_update] {before} -> {after} profile pic update? najs")
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
@@ -66,8 +88,6 @@ class Stats(commands.Cog):
             for guild in self.bot.guilds:
                 for member in guild.members:
                     await self.bot.db.set_user_name(member.id, str(member))
-                    activities = [item for item in member.activities if int(item.type) != 4]
-                    self.current_activities[member.id] = activities
 
             print(f"[Stats] Reading in activities. Done. ({time.time()-start}s)")
 
@@ -90,12 +110,21 @@ class Stats(commands.Cog):
     async def on_member_update(self, member_before, member_after):
         if member_before.bot or member_after.bot:
             return
+       
+        # add server as main server if member doesnt have a main server
+        if member_before.id not in self.member_main_guild:
+            self.member_main_guild[member_before.id] = member_before.guild.id
+
+        # is this the main server? if not exit to prevent dublicate updates
+        if member_before.guild.id != self.member_main_guild[member_before.id]:
+            return
 
         mb_activities = [item for item in member_before.activities if int(item.type) != 4]
         member_before.activities = mb_activities
         ma_activities = [item for item in member_after.activities if int(item.type) != 4]
         member_after.activities = ma_activities
 
+        
         # TODO 
         # Games: done
         # Spotify: TODO
@@ -111,142 +140,160 @@ class Stats(commands.Cog):
       
     async def update_activity(self, member_before, member_after):
         member_id = member_before.id
+        clock = datetime.now().strftime("%H:%M:%S")
 
         # Started something
         if len(member_before.activities) < len(member_after.activities):
-            if len(member_after.activities) != len(self.current_activities.get(member_id, [])):
-                self.current_activities[member_id] = member_after.activities
 
-                # diff
-                new_act = activity_diff(member_before.activities, member_after.activities)
+            # diff
+            new_act = activity_diff(member_before.activities, member_after.activities)
 
-                clock = datetime.now().strftime("%H:%M:%S") #local time
-                if new_act:
-                    if int(new_act.type) == discord.ActivityType.streaming:
-                        print()
+            if new_act:
+                    # Listening
+                if new_act.type == discord.ActivityType.listening:
+                    self.start_song(member_after, new_act)
+                    stat_logger.info(f"[{clock}] {str(member_after):<20} {new_act.name:<30} <- {'':<30}")
+
+                elif int(new_act.type) == discord.ActivityType.streaming:
+                    print(f"[{clock}] {str(member_before):<30} Started Streaming")
+                    pass
+
+                elif new_act.type == discord.ActivityType.playing:
+                    try:
+                        stat_logger.info(f"[{clock}] {str(member_after):<20} {'':<30} -> {new_act.name} ")
+                    except Exception as e:
                         pass
-                    if not isinstance(new_act.start, datetime):
-                        print("not isinstance(new_act.start, datetime)")
-                    else:
-                        try:
-                            logger.info(f"[{clock}] {str(member_after):<20} {'':<30} -> {new_act.name} ")
-                        except Exception as e:
-                            pass
+            else:
+                new_act = get_activity_by_type(member_after.activities, discord.ActivityType.listening)
+
+                if new_act.type == discord.ActivityType.listening:
+                    print(f'new_act.type == discord.ActivityType.listening ({new_act.type} == {discord.ActivityType.listening})')
+                    self.start_song(member_after, new_act)
+                    song_logger.info(f"[{clock}] {str(member_after):<20} {'':<30} -> {new_act.title:<30}")
+                    pass
 
         # Stopped something
         elif len(member_before.activities) > len(member_after.activities):
-            if len(member_after.activities) != len(self.current_activities.get(member_id, [])):
-                self.current_activities[member_id] = member_after.activities
+            # diff
+            stopped_act = activity_diff(member_before.activities, member_after.activities)
 
-                # diff
-                stopped_act = activity_diff(member_before.activities, member_after.activities)
+            if stopped_act:
+                        
+                # Listening
+                if stopped_act.type == discord.ActivityType.listening:
 
-                if stopped_act:                  
-                    if int(stopped_act.type) == discord.ActivityType.streaming:
-                        print(f"{member_before} Stopped Streaming.")
-                        pass
-                    if not isinstance(stopped_act.start, datetime):
-                        clock = datetime.now().strftime("%H:%M:%S")
-                        print(f"[{clock}] [ERROR] No 'act.start': {stopped_act}")
-                    else:
+                    member = member_after
+                    if member.id in self.current_songs:
+                        try:
+                            spotify = self.current_songs[member.id]
+                            act = spotify.song
+                            duration = datetime.now() - spotify.start
+                            await self.bot.db.add_song(member.id, act.title, act.album, act.artist, act.track_id, act.duration.seconds, duration.seconds, act.album_cover_url)
+                            stat_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} <- {'':<30}")
+                        except Exception as e:
+                            print(e)
+                            print()
+                # Streaming
+                elif stopped_act.type == discord.ActivityType.streaming:
+                    print(f"[{clock}] {str(member_before):<30} Stopped Streaming")
+
+                    stat_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} <- {'Stopped Streaming.':<30}")
+                    pass
+                
+                # Playing
+                elif stopped_act.type == discord.ActivityType.playing:
+                    try:                        
                         clock = datetime.now().strftime("%H:%M:%S")
                         if stopped_act.start > datetime.utcnow():
                             print(f"[{clock}] [ERROR] act.start > datetime.utcnow() : {stopped_act.start} > {datetime.utcnow()}")
                             print(stopped_act)
+
                         duration = datetime.utcnow()-stopped_act.start
                         
                         if stopped_act.type == discord.ActivityType.playing:
-                            await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)
+                            await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)    
 
-                           
-                else:
-                    get_activity_by_type()
-                    stopped_act.type == discord.ActivityType.listening:
-                    print(f"start:    {stopped_act.start.hour}:{stopped_act.start.minute}:{stopped_act.start.second}")
-                    print(f"end:      {stopped_act.end.hour}:{stopped_act.end.minute}:{stopped_act.end.second}")
-                    print(f"length:   {stopped_act.duration.seconds} s")
-                    print(f"duration: {duration.seconds} s")
-                    print()
-                    pass
-                    #await self.bot.db.add_song(stopped_act.title, stopped_act.album, stopped_act.artist, stopped_act.track_id, stopped_act.duration.seconds, duration)
+                        stat_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} <- {'':<30} (Duration: {duration.seconds:>6} s)") 
+                    except TypeError as e:
+                        print(f"TypeError, passing")
+                        pass
+                    except Exception as e:
+                        print(f"-----------[Error]-----------")
+                        print(f"Error in 'elif stopped_act.type == discord.ActivityType.playing:'")
+                        print(f"Error type {type(e)}")
+                        print(f"Error {e}")
+                        pass 
+            else:
+                print("------------------------------------")
+                print("Hur kom jag till denna else satsen??")
+                print("------------------------------------")
+                stopped_act = get_activity_by_type(member_after.activities, discord.ActivityType.listening)
+                if stopped_act:
+                    if stopped_act.type == discord.ActivityType.listening:
+                        await self.end_song(member_after)
+                        song_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.title:<30} <- {'':<30}")
 
-                        logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} <- {'':<30} (Duration: {duration.seconds:>6} s)")
         # Something Changed
         elif len(member_before.activities) == len(member_after.activities):
 
-            if activity_same(self.current_activities.get(member_id, []), member_before.activities):
-                self.current_activities[member_id] = member_after.activities
-                # old activity
-                stopped_act = activity_diff(member_after.activities, member_before.activities)
-                # new activity
-                started_act = activity_diff(member_before.activities, member_after.activities)
+            # old activity
+            stopped_act = activity_diff(member_after.activities, member_before.activities)
+            # new activity
+            started_act = activity_diff(member_before.activities, member_after.activities)
 
-                if stopped_act and started_act:
+            if stopped_act and started_act:
+                stop_start_clock = stopped_act.start.strftime("%H:%M:%S")
+                start_start_clock= started_act.start.strftime("%H:%M:%S")
 
-                    clock = datetime.now().strftime("%H:%M:%S")
-                    stop_start_clock = stopped_act.start.strftime("%H:%M:%S")
-                    start_start_clock= started_act.start.strftime("%H:%M:%S")
+                if int(stopped_act.type) == 0:
+                    if stopped_act.start > datetime.utcnow():
+                        print("wtf is going on")
+                        print(stopped_act)
+                    duration = datetime.utcnow()-stopped_act.start
+                    await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)
+                stat_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} -> {started_act.name:<30} (Duration: {duration.seconds:>6} s)")
 
-                    if int(stopped_act.type) == 0:
-                        if stopped_act.start > datetime.utcnow():
-                            print("wtf is going on")
-                            print(stopped_act)
-                        duration = datetime.utcnow()-stopped_act.start
-                        await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)
-                    logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} -> {started_act.name:<30} (Duration: {duration.seconds:>6} s)")
+            # something updated
+            else:
+                member_before.activities.sort(key=lambda a: a.type, reverse=True)
+                member_after.activities.sort(key=lambda a: a.type, reverse=True)
 
-                # something updated
+                for i in range(len(member_before.activities)):
+                    act1 = member_before.activities[i]
+                    act2 = member_after.activities[i]
+
+                    if act1.type != act2.type:
+                        print("how?")
+                        continue
+
+                    # Spotify changes
+                    if act1.type == discord.ActivityType.listening:
+                        song_logger.info(f"[{clock}] {str(member_after):<20} {act1.title:<30} -> {act2.title:<30}")
+                        
+                        if act1 == act2:
+                            print("same")
+
+                        await self.end_song(member_after)
+                        self.start_song(member_after, act2)
+
+                    pass
+                if False: #listening to song: if spotify before and after -> if song name changes -> save finished
+                    pass
                 else:
-                    
-                    member_before.activities.sort(key=lambda a: a.type, reverse=True)
-                    member_after.activities.sort(key=lambda a: a.type, reverse=True)
-
-                    for i in range(len(member_before.activities)):
-                        act1 = member_before.activities[i]
-                        act2 = member_after.activities[i]
-
-                        if act1.type != act2.type:
-                            print("how?")
-                            continue
-
-                        # Spotify changes
-                        if act1.type == discord.ActivityType.listening:
-                            print()
-                            pass
-
-                        pass
-                    if False: #listening to song: if spotify before and after -> if song name changes -> save finished
-                        pass
-                    else:
-                        pass
-                    #print(f"Updated something.")
-                pass
+                    pass
+                #print(f"Updated something.")
+            pass
 
         else:
             print(f"What happened??. {member_before.activities} - {member_after.activities}")
 
-        self.current_activities[member_id] = member_after.activities
-
     async def update_status(self, member_before, member_after):
-        return
+        
+        if member_before.status == discord.Status.offline:
+            status_logger.info(f"{str(member_before)} went online")
 
         if member_after.status == discord.Status.offline:
-            if member_before.id in self.current_activities:
-                print(f"{member_before.name} went offline, Saving...")
-
-                for activity in member_before.activities:
-                    # playing
-                    if activity_before.type is discord.ActivityType.playing:
-                        time = (datetime.utcnow() -
-                                activity_before.start).seconds
-
-                        app_id = self.current_activities[member_before.id][int(
-                            discord.ActivityType.playing)]
-
-                        await self.bot.db.add_game(member_before.id, app_id,
-                                                   time)
-
-                del self.current_activities[member_before.id]
+            status_logger.info(f"{str(member_before)} went offline")
 
     async def stats_embedd(self, ctx, title:str, author:str, thumbnail_url:str, members: list, limit = 10):
 
@@ -328,23 +375,145 @@ class Stats(commands.Cog):
         await ctx.send(
             "[Error] stats.py -> stats() -> Exception: {}".format(error))
 
+    def start_song(self, member: discord.Member, act):
+        self.current_songs[member.id] = Song(act)
+
+    async def end_song(self, member: discord.Member):
+        if member.id not in self.current_songs:
+            return
+        
+        act      = self.current_songs[member.id].song
+        duration = datetime.now() - self.current_songs[member.id].start
+        await self.bot.db.add_song(member.id, act.title, act.album, act.artist, act.track_id, act.duration.seconds, duration.seconds, act.album_cover_url)
+
+    @commands.group(name='spotify', invoke_without_command=True)
+    async def _spotify(self, ctx, *, arg: str):
+        try:
+            member = await commands.MemberConverter().convert(ctx, arg)
+        except:
+            member = None
+            song = arg
+
+        if isinstance(member, discord.Member):
+            await ctx.send(f'[Member] Getting music stats for {member.name}...')
+            
+            # Search db for member info
+            result2 = await self.bot.db.get_song_by_id(member.id)
+        else:
+            await ctx.send(f'[Song] Getting music stats for "{song}"...')
+            # Search db for song name
+            # ...
+
+    @_spotify.command(name='top')
+    async def _spotify_top(self, ctx, date):
+        '''
+        ">spotify top 1w" returns  the most played song from the last week
+        ">spotify top 2020-01-01" or ">spotify top 01-01-2020" returns the most played song since 01 jan 2020  
+        '''
+        try:
+            date = datetime.strptime(date, '%d-%m-%Y')
+        except:
+            try:
+                date = datetime.strptime(date, '%Y-%m-%d')
+            except:
+                try:
+                    amount = int(date[:-1])
+                    unit_of_time = date[-1:]
+                    if unit_of_time in ["d","w","m","y"]:
+                        if unit_of_time == "d":
+                            date = timedelta(days=amount)
+                        elif unit_of_time == "w":
+                            date = timedelta(weeks=amount)
+                        elif unit_of_time == "m":
+                            date = timedelta(months=amount)
+                        elif unit_of_time == "y":
+                            date = timedelta(years=amount)
+                        date = datetime.now() - date
+                except:
+                    pass
+
+        if date:
+            try:
+                members = []
+                for member in ctx.guild.members:
+                    if not member.bot:
+                        members.append(member.id)
+
+                title_print  = ""
+                artist_print = ""
+                played_print = ""
+
+                result = await self.bot.db.get_most_played_song(tuple(members), date)
+                for row in result:
+                    title       = row["title"]
+                    artist      = row["artist"]
+                    song_length = row["song_length"]
+                    play_time   = row["play_time"]
+                    
+                    if round(play_time/song_length) > 0:
+                        title_print  += f"{embedify(title)}\n"
+                        artist_print += f"{embedify(artist)}\n"
+                        played_print += f"{round(play_time/song_length)}\n"
+
+                if not title_print:
+                    await ctx.send("No data corresponding to the input")
+                    return
+            
+                title           = f"List of the most played songs"
+                author          = f"~~ {str(ctx.guild.name)} ~~"
+                description     = f"Based on saved data from \n{date.strftime('%Y-%m-%d %H:%M:%S')}"
+                try:
+                    thumbnail_url = result[0]["album_cover_url"]
+                except expression as identifier:
+                    thumbnail_url = ctx.guild.icon_url
+                
+                embed = discord.Embed   (title= title, description=description, color=0x1DB954)
+                embed.set_author        (name = author)
+                embed.set_thumbnail     (url  = thumbnail_url)
+                embed.add_field(name="Song",       value=title_print,    inline=True)
+                embed.add_field(name="Artist",     value=artist_print,   inline=True)
+                embed.add_field(name="Played",     value=played_print,   inline=True)
+                embed.timestamp = datetime.now()
+                embed.set_footer(text="~ Thats it for this time ~")
+                await ctx.send(embed=embed)
+            except Exception as e:
+                print(e)
+
+    @_spotify.error
+    async def _spotify_error(self, ctx, error):
+        print("[Error] stats.py -> stats() -> _spotify_error -> Exception: {}".format(error))
+        await ctx.send("[Error] stats.py -> stats()  -> _spotify_error -> Exception: {}".format(error))
+
+def embedify(text, len = 23):
+    text = text[:len] + (text[len:] and '..')
+    return text
+
+class Song():
+    def __init__(self, act):
+        self.song = act
+        self.start = datetime.now()
+
 def get_activity_by_type(list1, type : discord.ActivityType):
     for act in list1:
         if act.type == type:
             return act
-
-    return None
-
+            
 def activity_same(list1, list2):
     try:
         list1_names = []
         for act in list1:
             if int(act.type) != 4:
-                list1_names.append(act.name)
+                if int(act.type) == 2:
+                    list1_names.append(act.track_id)
+                else:
+                    list1_names.append(act.name)
         list2_names = []
         for act in list2:
             if int(act.type) != 4:
-                list2_names.append(act.name)
+                if int(act.type) == 2:
+                    list2_names.append(act.track_id)
+                else:
+                    list2_names.append(act.name)
 
         if list1_names == list2_names: 
             return True
@@ -386,7 +555,6 @@ def activity_diff(list1, list2):
     except Exception as e:
         print(f"[ERROR] - [activity_diff] - {e}")
         return None
-
 
 def setup(bot):
     bot.add_cog(Stats(bot))

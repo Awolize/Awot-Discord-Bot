@@ -13,7 +13,7 @@ logger.addHandler(handler)
 
 class Misc(commands.Cog):
     '''
-    Misc: misc
+    Misc: misc, yes very miscellaneous
     '''
 
     def __init__(self, bot):

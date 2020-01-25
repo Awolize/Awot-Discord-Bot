@@ -93,6 +93,53 @@ class Database():
                             play_time = games.play_time + $3 
                 ''', user_id, str(game), time)
 
+
+    async def get_most_played_song(self, users: tuple, date):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                try:
+                    result = await conn.fetch('''
+                        SELECT title, album, artist, song_length, Sum(play_time) as play_time, album_cover_url
+                        FROM spotify
+                        WHERE
+                            t >= $2 
+                            AND user_id = any($1::BIGINT[])
+                        GROUP BY title, album, artist, song_length, album_cover_url
+                        ORDER BY play_time DESC
+                        LIMIT 20;
+                    ''', users, date)
+                    return result
+                except Exception as e:
+                    print(f"ERROR: {e}")
+    
+
+    async def get_song_by_id(self, user_id):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetch('''
+                    Select 
+                        title, artist, song_length/play_time as times
+                    FROM spotify 
+                        where user_id = $1 
+                    ORDER BY times
+                ''', user_id)
+                return result
+
+    # act.title, act.album, act.artist, act.track_id, act.duration.seconds, duration
+    async def add_song(self, user_id, title, album, artist, track_id, song_length, play_time, url):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.execute('''
+                    INSERT INTO spotify 
+                        (user_id, title, album, artist, track_id, song_length, play_time, album_cover_url) 
+                    VALUES 
+                        ( $1,     $2,    $3,    $4,     $5,       $6,          $7,        $8 ) 
+                    
+                    ON CONFLICT (user_id, track_id, t) DO UPDATE
+                        SET 
+                            play_time = spotify.play_time + $7
+                ''', user_id, title, album, artist, track_id, song_length, play_time, url)
+
     async def set_user_name(self, user_id, name):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
