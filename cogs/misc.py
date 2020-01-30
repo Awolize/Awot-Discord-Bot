@@ -46,6 +46,13 @@ class Misc(commands.Cog):
         latency = self.bot.latency
         await ctx.send("{:.0f} ms".format(latency*1000/2))
 
+    @commands.command(name="source")
+    async def source(self, ctx):
+        """
+        Get the github link to the repository.
+        """
+
+        await ctx.send(f"<https://github.com/Awolize/Awot-Discord-Bot>")
 
     @commands.group(name='reload', hidden=True, invoke_without_command=True)
     async def _reload(self, ctx, *, module):
@@ -62,7 +69,7 @@ class Misc(commands.Cog):
         """Reloads all modules, while pulling from git."""
 
         msg = await ctx.send("Reloading all cogs...\n")
-        content = ""
+        content = msg.content + "\n"
 
         cogs = list(self.bot.cogs)
         successfull_reloads = 0
@@ -79,7 +86,7 @@ class Misc(commands.Cog):
             content += temp
                 
         content += f"\nSuccessfully reloaded [ {successfull_reloads} / {len(cogs)} ]"
-        await msg.edit(content=content, delete_after=30)
+        await msg.edit(content=content)
         if successfull_reloads == len(cogs):
             await msg.add_reaction("✅")
         else:

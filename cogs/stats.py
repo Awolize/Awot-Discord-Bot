@@ -2,6 +2,7 @@ import time
 import asyncpg
 import asyncio
 import discord
+import textwrap
 from discord.ext import tasks, commands
 from datetime import datetime, timedelta
 import sys
@@ -32,13 +33,29 @@ class Stats(commands.Cog):
     """
 
     def __init__(self, bot):
-        try:
-            self.bot = bot
-            self.current_songs = {}
-            self.current_status = {}
-            self.member_main_guild = {}
-        except Exception as e:
-            print(f"Could not run __init__. Error: {e}")
+        self.bot = bot
+        self.current_songs = {}
+        self.current_status = {}
+        self.member_main_guild = {}
+
+        for member in self.bot.get_all_members():
+            if member.bot:
+                continue
+
+            song_act = discord.utils.get(member.activities, type=discord.ActivityType.listening)
+            if song_act:
+                self.start_song(member, song_act)
+                
+            #  Add current Status data
+            self.current_status[member.id] = (member.status, datetime.now())
+
+    @commands.Cog.listener()
+    async def on_guild_available(self, guild):
+        await self.init([guild])
+
+    @commands.Cog.listener()
+    async def on_error(self, event):
+        print(event)
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
@@ -56,14 +73,15 @@ class Stats(commands.Cog):
 
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
+        clock = datetime.now().strftime("%H:%M:%S")
         if before.discriminator != after.discriminator:
-            print(f"[on_user_update] Discriminator update: {before} -> {after}")
-            self.bot.db.set_user_name(after.id, str(after))
+            print(f"[{clock}] [on_user_update] Discriminator update: {before} -> {after}")
+            await self.bot.db.set_user_name(after.id, str(after))
         elif before.name != after.name:
-            print(f"[on_user_update] Name update: {before} -> {after}")
-            self.bot.db.set_user_name(after.id, str(after))
+            print(f"[{clock}] [on_user_update] Name update: {before} -> {after}")
+            await self.bot.db.set_user_name(after.id, str(after))
         else:
-            print(f"[on_user_update] {before} -> {after} profile pic update? najs")
+            print(f"[{clock}] [on_user_update] {before} -> {after} profile pic update? najs")
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
@@ -80,35 +98,11 @@ class Stats(commands.Cog):
         # self.current_songs  = {}
 
     @commands.Cog.listener()
-    async def on_ready(self):
-        print("[Stats] Ready, running init...")
-        print(f"[Stats] [Init] Init.")
-        start = time.time()
-        try:
-            await self.init(self.bot.guilds)
-            print(f"[Stats] [Init] Init Done : {round(time.time()-start, 3)} s")
-        except Exception as e:
-            print(f"[on_ready] [Database] Error: {e}")
+    async def on_ready(self): 
+        print("[Stats] Ready")
 
-    async def init(self, guild: list):
-        
-        guild_start = time.time()
-        # Init status
-        for member in self.bot.get_all_members():
-            if member.bot:
-                continue
-            # Add current Spotify data
-            song_act = discord.utils.get(member.activities, type=discord.ActivityType.listening)
-            if song_act:
-                self.start_song(member, song_act)
-                
-            #  Add current Status data
-            self.current_status[member.id] = (member.status, datetime.now())
-
-        string = "Member info"
-        print(f"[Stats] [Init] - {string:<20} {round(time.time()-guild_start, 3)} s")
-
-        for guild in self.bot.guilds:
+    async def init(self, guilds: list):
+        for guild in guilds:
             try:
                 guild_start = time.time()
 
@@ -117,6 +111,13 @@ class Stats(commands.Cog):
                     if member.bot:
                         continue
                     members.append(member.id)
+
+                    song_act = discord.utils.get(member.activities, type=discord.ActivityType.listening)
+                    if song_act:
+                        self.start_song(member, song_act)
+                        
+                    #  Add current Status data
+                    self.current_status[member.id] = (member.status, datetime.now())
 
                 result = await self.bot.db.get_users(tuple(members), guild.id)
 
@@ -433,7 +434,7 @@ class Stats(commands.Cog):
 
         title           = f"List of the most played songs"
         author          = f"~~ Spotify ~~"
-        description     = f"Based on saved data from \n{date.strftime('%Y-%m-%d %H:%M:%S')}"
+        description     = f"Based on data from \n{date.strftime('%Y-%m-%d %H:%M:%S')}"
         thumbnail_url   = await self.bot.db.get_album_cover_url(result[0]["track_id"]) 
         
         embed = discord.Embed   (title= title, description=description, color=0x1DB954)
@@ -592,6 +593,170 @@ class Stats(commands.Cog):
         await ctx.send('Type ">help spotify" for more information')
         return
        
+    @commands.command(name='info', aliases=["about", "profile"])
+    async def _info(self, ctx: Context, member: discord.Member = None):
+        if member is None:
+            member = ctx.author
+
+        try:
+            # Get most played song, title and time
+            async with self.bot.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    spotify_most_played_song = await conn.fetchval(f'''
+                        SELECT 
+                            title, artist, album_cover_url, sum(play_time) as pt
+                        FROM 
+                            spotify 
+                        WHERE 
+                            user_id = $1
+                        GROUP BY 
+                            title, artist, album_cover_url
+                        ORDER BY
+                            pt desc
+                    ''', member.id)
+            # Get total spotify time
+            async with self.bot.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    spotify_play_time = await conn.fetchval(f'''
+                        SELECT 
+                            sum(play_time) as pt
+                        FROM 
+                            spotify 
+                        WHERE 
+                            user_id = $1
+                        ORDER BY
+                            pt desc
+                    ''', member.id)
+                    # result is in seconds
+            # Get most played game
+            async with self.bot.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    most_played_game = await conn.fetchval(f'''
+                        SELECT 
+                            game, sum(play_time) as pt
+                        FROM 
+                            games 
+                        WHERE 
+                            user_id = $1
+                        GROUP BY 
+                            game
+                        ORDER BY
+                            pt desc
+                    ''', member.id)
+            
+            # Get total game time
+            async with self.bot.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    game_play_time = await conn.fetchval(f'''
+                        SELECT 
+                            sum(play_time) as pt
+                        FROM 
+                            games 
+                        WHERE 
+                            user_id = $1
+                        ORDER BY
+                            pt desc
+                    ''', member.id)
+                    # result is in seconds
+        except Exception as e:
+            print(e)
+
+        joined      = member.joined_at.strftime('%Y-%m-%d - %H:%M:%S')
+        username    = str(member)
+        avatar_url  = member.avatar_url_as(static_format="png")
+        nickname    = member.nick
+        roles       = ""
+        for role in member.roles:
+            roles += f"{discord.utils.escape_mentions(role.name)} "
+        
+        status      = member.status
+        activity    = "N/A"
+        if member.activity.name:
+            activity = member.activity.name
+
+        spotify_song = "N/A"
+        spotify_time = "N/A"
+        game_name    = "N/A"
+        game_time    = "N/A"
+
+        if spotify_most_played_song:
+            spotify_song = spotify_most_played_song
+
+        if spotify_play_time:
+            spotify_time = f"{round(spotify_play_time/60/60)} h"
+
+        if most_played_game:
+            game_name = most_played_game
+
+        if game_play_time:
+            game_time = f"{round(game_play_time/60/60)} h"
+
+        print_str = (
+            f"{username} Summary"
+            f"```"
+            f"Most played: \n"
+            f"Song: {spotify_song}\n"
+            f"Game: {game_name}\n\n"
+            f"Total time: \n"
+            f"Spotify: {spotify_time}\n"
+            f"Gaming:  {game_time}\n"
+            f"{username}, {joined}, {nickname}, {roles}, {status}, {activity}"
+            f"```"
+            f"{avatar_url}"
+        )
+        await ctx.send(print_str)
+
+        return
+
+        try:
+            date = datetime.strptime("2020-01-25", '%Y-%m-%d')
+
+            title           = f"A summary of Lolisen#2158"
+            author          = f"~~ Awot ~~"
+            description     = "" #f"Based on data from \n{date.strftime('%Y-%m-%d')}"
+            thumbnail_url   = member.avatar_url
+            
+            #await self.bot.db.get_album_cover_url(result[0]["track_id"]) 
+
+            description=textwrap.dedent(f"""
+                **{username} information**
+                Created: {created}
+                Voice region: {region}
+                Features: {features}
+                **Counts**
+                Members: {member_count:,}
+                Roles: {roles}
+                Text: {text_channels}
+                Voice: {voice_channels}
+                Channel categories: {category_channels}
+                **Members**
+                {constants.Emojis.status_online} {online}
+                {constants.Emojis.status_idle} {idle}
+                {constants.Emojis.status_dnd} {dnd}
+                {constants.Emojis.status_offline} {offline}
+            """)
+
+            embed = discord.Embed   (title= title, description=description, color=discord.Color.gold())
+            embed.set_author    (name = author, url = self.bot.user.avatar_url, icon_url = self.bot.user.avatar_url)
+            embed.set_thumbnail (url  = thumbnail_url)
+
+            embed.set_footer    (text=f"ID: {member.id} • Based on data from {date.strftime('%Y-%m-%d')}")
+            await ctx.send      (embed=embed)
+        except Exception as e:
+            print(e)
+
+    @commands.command(name='server', aliases=["serverinfo"])
+    async def _server(self, ctx):
+        '''
+            Members
+        :status_online: 1598
+        :status_idle: 2361
+        :status_dnd: 862
+        :status_offline: 28661
+        '''
+        pass            
+    
+    
 def embedify(text, len = 23):
     text = text[:len] + (text[len:] and '..')
     return text
@@ -665,4 +830,8 @@ def activity_diff(list1, list2):
         return None
 
 def setup(bot):
-    bot.add_cog(Stats(bot))
+    stats = Stats(bot)
+    bot.add_cog(stats)
+
+def teardown(bot):
+    pass
