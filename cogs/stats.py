@@ -3,7 +3,9 @@ import asyncpg
 import asyncio
 import discord
 import textwrap
+
 from discord.ext import tasks, commands
+
 from datetime import datetime, timedelta
 import sys
 
@@ -594,7 +596,7 @@ class Stats(commands.Cog):
         return
        
     @commands.command(name='info', aliases=["about", "profile"])
-    async def _info(self, ctx: Context, member: discord.Member = None) -> None:
+    async def _info(self, ctx, member: discord.Member = None) -> None:
         if member is None:
             member = ctx.author
 
@@ -661,102 +663,88 @@ class Stats(commands.Cog):
         except Exception as e:
             print(e)
 
-        joined      = member.joined_at.strftime('%Y-%m-%d - %H:%M:%S')
-        username    = str(member)
-        avatar_url  = member.avatar_url_as(static_format="png")
-        nickname    = member.nick
-        roles       = ""
-        for role in member.roles:
-            roles += f"{discord.utils.escape_mentions(role.name)} "
-        
-        status      = member.status
-        activity    = "N/A"
-        if member.activity.name:
-            activity = member.activity.name
-
-        spotify_song = "N/A"
-        spotify_time = "N/A"
-        game_name    = "N/A"
-        game_time    = "N/A"
-
-        if spotify_most_played_song:
-            spotify_song = spotify_most_played_song
-
-        if spotify_play_time:
-            spotify_time = f"{round(spotify_play_time/60/60)} h"
-
-        if most_played_game:
-            game_name = most_played_game
-
-        if game_play_time:
-            game_time = f"{round(game_play_time/60/60)} h"
-
-        print_str = (
-            f"{username} Summary"
-            f"```"
-            f"Most played: \n"
-            f"Song: {spotify_song}\n"
-            f"Game: {game_name}\n\n"
-            f"Total time: \n"
-            f"Spotify: {spotify_time}\n"
-            f"Gaming:  {game_time}\n"
-            f"{username}, {joined}, {nickname}, {roles}, {status}, {activity}"
-            f"```"
-            f"{avatar_url}"
-        )
-
-        description = textwrap.dedent(f"""
-                **User Information**
-                Created: {created}
-                Profile: {user.mention}
-                ID: {user.id}
-                {custom_status}
-                **Member Information**
-                Joined: {joined}
-                Roles: {roles or None}
-            """)
-        
-
-        await ctx.send(print_str)
-
-        return
-
         try:
-            date = datetime.strptime("2020-01-25", '%Y-%m-%d')
+            custom_status = ""
 
-            title           = f"A summary of Lolisen#2158"
-            author          = f"~~ Awot ~~"
-            description     = "" #f"Based on data from \n{date.strftime('%Y-%m-%d')}"
-            thumbnail_url   = member.avatar_url
-            
-            #await self.bot.db.get_album_cover_url(result[0]["track_id"]) 
+            for act in member.activities:
+                if int(act.type) == 4 and act.name:
+                    name = discord.utils.escape_markdown(act.name)
 
-            description=textwrap.dedent(f"""
-                **{username} information**
-                Created: {created}
-                Voice region: {region}
-                Features: {features}
-                **Counts**
-                Members: {member_count:,}
-                Roles: {roles}
-                Text: {text_channels}
-                Voice: {voice_channels}
-                Channel categories: {category_channels}
-                **Members**
-                {constants.Emojis.status_online} {online}
-                {constants.Emojis.status_idle} {idle}
-                {constants.Emojis.status_dnd} {dnd}
-                {constants.Emojis.status_offline} {offline}
-            """)
+                    custom_status = f'Status: {name}\n'
+                    break
 
-            embed = discord.Embed   (title= title, description=description, color=discord.Color.gold())
-            embed.set_author    (name = author, url = self.bot.user.avatar_url, icon_url = self.bot.user.avatar_url)
-            embed.set_thumbnail (url  = thumbnail_url)
+            spotify_song = ""
+            spotify_time = ""
+            game_name    = ""
+            game_time    = ""
 
-            embed.set_footer    (text=f"ID: {member.id} • Based on data from {date.strftime('%Y-%m-%d')}")
-            await ctx.send      (embed=embed)
+            if spotify_most_played_song:
+                spotify_song = spotify_most_played_song
+
+            if spotify_play_time:
+                spotify_time = f"{round(spotify_play_time/60/60)} h"
+
+            if most_played_game:
+                game_name = most_played_game
+
+            if game_play_time:
+                game_time = f"{round(game_play_time/60/60)} h"
+
+            online  = 0
+            idle    = 0 
+            dnd     = 0
+            offline = 0
+
+            emoji_online = "<:doubt:672523430431555584>"
+            await ctx.send(emoji_online)
+
+            emoji_online = f"<:Zergling:672515914666606596>"
+            await ctx.send(emoji_online)
+
+            emoji_online = await commands.EmojiConverter().convert(ctx, "596576749790429200")
+            emoji_online = await commands.EmojiConverter().convert(ctx, "672512684620513310")
+            emoji_online = await commands.EmojiConverter().convert(ctx, "672512684620513310")
+
+            roles = ", ".join(role.mention for role in member.roles if role.name != "@everyone")
+
+            description = textwrap.dedent(f"""
+                    **User Information**
+                    Profile: {member.mention}
+                    {custom_status}
+                    **Member Information**
+                    Nickname: {member.nick}
+                    Joined: {member.joined_at.strftime('%Y-%m-%d')}
+                    Roles: {roles or None}
+
+                    **Stats Information**
+                    Most played:
+                    - Game: {game_name or None}
+                    - Song: {spotify_song or None}
+
+                    Total time:
+                    - Gaming: {game_time or None}
+                    - Spotify: {spotify_time or None}
+
+                    Status:
+                    {emoji_online} {online}
+                    :status_idle: {idle}
+                    :status_dnd: {dnd}
+                    :status_offline: {offline}
+                """)
         except Exception as e:
             print(e)
+            return
+
+        title           = f"A summary of {str(member)}"
+        author          = f"~~ Awot ~~"
+        thumbnail_url   = member.avatar_url
+
+        embed = discord.Embed   (title= title, description=description, color=discord.Color.gold())
+        embed.set_author    (name = author, url = self.bot.user.avatar_url, icon_url = self.bot.user.avatar_url)
+        embed.set_thumbnail (url  = thumbnail_url)
+
+        embed.set_footer    (text=f"ID: {member.id}")
+        await ctx.send      (embed=embed)
 
     @commands.command(name='server', aliases=["serverinfo"])
     async def _server(self, ctx):
@@ -766,6 +754,24 @@ class Stats(commands.Cog):
         :status_idle: 2361
         :status_dnd: 862
         :status_offline: 28661
+
+        description=textwrap.dedent(f"""
+            **{username} information**
+            Created: {created}
+            Voice region: {region}
+            Features: {features}
+            **Counts**
+            Members: {member_count:,}
+            Roles: {roles}
+            Text: {text_channels}
+            Voice: {voice_channels}
+            Channel categories: {category_channels}
+            **Members**
+            {constants.Emojis.status_online} {online}
+            {constants.Emojis.status_idle} {idle}
+            {constants.Emojis.status_dnd} {dnd}
+            {constants.Emojis.status_offline} {offline}
+        """)
         '''
         pass            
     

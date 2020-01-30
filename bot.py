@@ -29,6 +29,7 @@ INIT_EXTENSIONS = [
 
 DESCRIPTION = ""
 
+
 class Awot(commands.Bot):
 
     def __init__(self):
