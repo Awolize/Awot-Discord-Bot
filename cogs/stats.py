@@ -594,7 +594,7 @@ class Stats(commands.Cog):
         return
        
     @commands.command(name='info', aliases=["about", "profile"])
-    async def _info(self, ctx: Context, member: discord.Member = None):
+    async def _info(self, ctx: Context, member: discord.Member = None) -> None:
         if member is None:
             member = ctx.author
 
