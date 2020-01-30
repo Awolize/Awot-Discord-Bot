@@ -12,7 +12,8 @@ from discord.ext import commands
 import database_handler as dbh
 import config
 
-# TODO SPOTIFY LIST, most listened to on the server
+# TODO SPOTIFY LIST, most listened to on the server, done
+#   Top played list for a member
 # TODO how do i set prefix per server? -> ?tag callable prefix
 
 # @commands.has_permissions(administrator=True)

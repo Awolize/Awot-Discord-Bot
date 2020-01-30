@@ -1,5 +1,6 @@
 import time
 import asyncpg
+import asyncio
 import discord
 from discord.ext import tasks, commands
 from datetime import datetime, timedelta
@@ -34,29 +35,32 @@ class Stats(commands.Cog):
         try:
             self.bot = bot
             self.current_songs = {}
+            self.current_status = {}
             self.member_main_guild = {}
         except Exception as e:
             print(f"Could not run __init__. Error: {e}")
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        print(
-            f"[{member.guild.name}] New member connected. Name: {member.name}\n"
-            f"Adding to database...")
+        clock = datetime.now().strftime("%H:%M:%S") #local time
+        print(f"[{clock}] [{str(member)}] Member joined guild [{member.guild.name}]\n")
         await self.add_user(member, member.guild.id)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
         # was the guild that the user left the main guild of this member?
-        if self.member_main_guild[member_id] == member.guild.id:
-            del self.member_main_guild[member_id]
-
-        print(f"[{member.guild.name}] Guild removed Member. {member.name}\n")
+        clock = datetime.now().strftime("%H:%M:%S") #local time
+        print(f"[{clock}] [{str(member)}] Member left guild [{member.guild.name}]\n")
+        if self.member_main_guild[member.id] == member.guild.id:
+            del self.member_main_guild[member.id]
 
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
         if before.discriminator != after.discriminator:
-            print(f"[on_user_update] {before} -> {after}")
+            print(f"[on_user_update] Discriminator update: {before} -> {after}")
+            self.bot.db.set_user_name(after.id, str(after))
+        elif before.name != after.name:
+            print(f"[on_user_update] Name update: {before} -> {after}")
             self.bot.db.set_user_name(after.id, str(after))
         else:
             print(f"[on_user_update] {before} -> {after} profile pic update? najs")
@@ -69,43 +73,80 @@ class Stats(commands.Cog):
         await self.init([guild])
 
     @commands.Cog.listener()
+    async def on_disconnect(self):
+        print("Disconnected Unexpectidly")
+        # Dont! init doesnt run when the connection comes back -> crash.
+        # self.current_status = {}
+        # self.current_songs  = {}
+
+    @commands.Cog.listener()
     async def on_ready(self):
-        await self.init(self.bot.guilds)
+        print("[Stats] Ready, running init...")
+        print(f"[Stats] [Init] Init.")
+        start = time.time()
         try:
-            print(f"[Stats] Comparing members to the database..")
-            start = time.time()
-            # Redundant but shouldnt restart more than one time a month anyways
-            for guild in self.bot.guilds:
-                for member in guild.members:
-                    await self.add_user(member, guild.id)
-            print(f"[Stats] DB init. Done. ({int(time.time()-start)}s)")
+            await self.init(self.bot.guilds)
+            print(f"[Stats] [Init] Init Done : {round(time.time()-start, 3)} s")
         except Exception as e:
             print(f"[on_ready] [Database] Error: {e}")
 
     async def init(self, guild: list):
-        try:
-            start = time.time()
-            for guild in self.bot.guilds:
+        
+        guild_start = time.time()
+        # Init status
+        for member in self.bot.get_all_members():
+            if member.bot:
+                continue
+            # Add current Spotify data
+            song_act = discord.utils.get(member.activities, type=discord.ActivityType.listening)
+            if song_act:
+                self.start_song(member, song_act)
+                
+            #  Add current Status data
+            self.current_status[member.id] = (member.status, datetime.now())
+
+        string = "Member info"
+        print(f"[Stats] [Init] - {string:<20} {round(time.time()-guild_start, 3)} s")
+
+        for guild in self.bot.guilds:
+            try:
+                guild_start = time.time()
+
+                members = []
                 for member in guild.members:
-                    await self.bot.db.set_user_name(member.id, str(member))
+                    if member.bot:
+                        continue
+                    members.append(member.id)
 
-            print(f"[Stats] Reading in activities. Done. ({time.time()-start}s)")
+                result = await self.bot.db.get_users(tuple(members), guild.id)
 
-        except Exception as e:
-            print(f"[on_ready] [init] {e}")
+                known_users = []
+                for row in result:
+                    known_users.append(row["user_id"])
+
+                new_members = list(set(members) - set(known_users))
+
+                for member_id in new_members:
+                    member = guild.get_member(member_id)
+                    await self.add_user(member, guild.id)
+
+                print(f"[Stats] [Init] - {guild.name:<20} {round(time.time()-guild_start, 3)} s")
+            except Exception as e:
+                    print(f"[Error] [Stats] [Init] {guild.name}, Error: {e}")
 
     async def add_user(self, member: discord.Member, server_id):
+        # Add user to DB
         try:
             await self.bot.db.add_user(member.id, member.name)
-            await self.bot.db.add_server(member.id, server_id)
-            await self.bot.db.add_status(member.id)
         except asyncpg.exceptions.UniqueViolationError as e:
-            try:
-                await self.bot.db.set_user_name(member.id, str(member))
-            except Exception as e:
-                print(f"{member}, {member.id}, {member.name}")
+            pass
+        
+        # Map server to user
+        try:
+            await self.bot.db.add_server(member.id, server_id)
+        except asyncpg.exceptions.UniqueViolationError as e:
+            pass
 
-    # TODO
     @commands.Cog.listener()
     async def on_member_update(self, member_before, member_after):
         if member_before.bot or member_after.bot:
@@ -124,17 +165,11 @@ class Stats(commands.Cog):
         ma_activities = [item for item in member_after.activities if int(item.type) != 4]
         member_after.activities = ma_activities
 
-        
-        # TODO 
-        # Games: done
-        # Spotify: TODO
-
         # Activity 
         if member_before.activities != member_after.activities:
             await self.update_activity(member_before, member_after)
-
-        # TODO
-        # Status: TODO
+        
+        # Status
         if member_before.status != member_after.status:
             await self.update_status(member_before, member_after)
       
@@ -154,8 +189,8 @@ class Stats(commands.Cog):
                     self.start_song(member_after, new_act)
                     stat_logger.info(f"[{clock}] {str(member_after):<20} {new_act.name:<30} <- {'':<30}")
 
-                elif int(new_act.type) == discord.ActivityType.streaming:
-                    print(f"[{clock}] {str(member_before):<30} Started Streaming")
+                elif new_act.type == discord.ActivityType.streaming:
+                    print(f"[{clock}] {str(member_before):<30} Started Streaming: {new_act.name}")
                     pass
 
                 elif new_act.type == discord.ActivityType.playing:
@@ -165,12 +200,12 @@ class Stats(commands.Cog):
                         pass
             else:
                 new_act = get_activity_by_type(member_after.activities, discord.ActivityType.listening)
-
-                if new_act.type == discord.ActivityType.listening:
-                    print(f'new_act.type == discord.ActivityType.listening ({new_act.type} == {discord.ActivityType.listening})')
-                    self.start_song(member_after, new_act)
-                    song_logger.info(f"[{clock}] {str(member_after):<20} {'':<30} -> {new_act.title:<30}")
-                    pass
+                if new_act:
+                    if new_act.type == discord.ActivityType.listening:
+                        print(f'new_act.type == discord.ActivityType.listening ({new_act.type} == {discord.ActivityType.listening})')
+                        self.start_song(member_after, new_act)
+                        song_logger.info(f"[{clock}] {str(member_after):<20} {'':<30} -> {new_act.title:<30}")
+                        pass
 
         # Stopped something
         elif len(member_before.activities) > len(member_after.activities):
@@ -224,14 +259,7 @@ class Stats(commands.Cog):
                         print(f"Error {e}")
                         pass 
             else:
-                print("------------------------------------")
-                print("Hur kom jag till denna else satsen??")
-                print("------------------------------------")
-                stopped_act = get_activity_by_type(member_after.activities, discord.ActivityType.listening)
-                if stopped_act:
-                    if stopped_act.type == discord.ActivityType.listening:
-                        await self.end_song(member_after)
-                        song_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.title:<30} <- {'':<30}")
+                pass
 
         # Something Changed
         elif len(member_before.activities) == len(member_after.activities):
@@ -242,16 +270,13 @@ class Stats(commands.Cog):
             started_act = activity_diff(member_before.activities, member_after.activities)
 
             if stopped_act and started_act:
-                stop_start_clock = stopped_act.start.strftime("%H:%M:%S")
-                start_start_clock= started_act.start.strftime("%H:%M:%S")
-
                 if int(stopped_act.type) == 0:
                     if stopped_act.start > datetime.utcnow():
                         print("wtf is going on")
                         print(stopped_act)
                     duration = datetime.utcnow()-stopped_act.start
                     await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)
-                stat_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} -> {started_act.name:<30} (Duration: {duration.seconds:>6} s)")
+                stat_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} -> {started_act.name:<30}")
 
             # something updated
             else:
@@ -267,35 +292,36 @@ class Stats(commands.Cog):
                         continue
 
                     # Spotify changes
-                    if act1.type == discord.ActivityType.listening:
-                        song_logger.info(f"[{clock}] {str(member_after):<20} {act1.title:<30} -> {act2.title:<30}")
-                        
-                        if act1 == act2:
-                            print("same")
+                    if act1.type == discord.ActivityType.listening and act2.type == discord.ActivityType.listening:
+                        try:
+                            song_logger.info(f"[{clock}] {str(member_after):<20} {act1.title:<30} -> {act2.title:<30}")
+                            
+                            await self.end_song(member_after)
+                            self.start_song(member_after, act2)
+                        except:
+                            pass
 
-                        await self.end_song(member_after)
-                        self.start_song(member_after, act2)
-
-                    pass
-                if False: #listening to song: if spotify before and after -> if song name changes -> save finished
-                    pass
-                else:
-                    pass
                 #print(f"Updated something.")
-            pass
 
         else:
             print(f"What happened??. {member_before.activities} - {member_after.activities}")
 
     async def update_status(self, member_before, member_after):
-        
-        if member_before.status == discord.Status.offline:
-            status_logger.info(f"{str(member_before)} went online")
+        clock = datetime.now().strftime("%H:%M:%S") #local time
+        status_logger.info(f"[{clock}] {str(member_before)} went {member_after.status}")
 
-        if member_after.status == discord.Status.offline:
-            status_logger.info(f"{str(member_before)} went offline")
+        await self.end_status(member_before)
+        self.start_status(member_after)
 
-    async def stats_embedd(self, ctx, title:str, author:str, thumbnail_url:str, members: list, limit = 10):
+    def start_status(self, member):
+        self.current_status[member.id] = (member.status, datetime.now())
+
+    async def end_status(self, member):
+        status, start_time = self.current_status[member.id]
+        time = (datetime.now() - start_time).seconds
+        await self.bot.db.add_status(member.id, status, time)
+
+    async def stats_embed(self, ctx, title:str, author:str, thumbnail_url:str, members: list, limit = 10):
 
         rows = await self.bot.db.get_most_played_game(tuple(members), limit)
         games = {}
@@ -353,7 +379,7 @@ class Stats(commands.Cog):
             author= f"~~ {str(member)} ~~"
             thumbnail_url = member.avatar_url
 
-            await self.stats_embedd(ctx, title, author, thumbnail_url, [member.id], limit)
+            await self.stats_embed(ctx, title, author, thumbnail_url, [member.id], limit)
             
 
         else:
@@ -367,7 +393,7 @@ class Stats(commands.Cog):
             author= f"~~ {str(ctx.guild.name)} ~~"
             thumbnail_url = ctx.guild.icon_url
 
-            await self.stats_embedd(ctx, title, author, thumbnail_url, members, 15)  
+            await self.stats_embed(ctx, title, author, thumbnail_url, members, 15)  
     
     @_stats.error
     async def _stats_error(self, ctx, error):
@@ -386,6 +412,40 @@ class Stats(commands.Cog):
         duration = datetime.now() - self.current_songs[member.id].start
         await self.bot.db.add_song(member.id, act.title, act.album, act.artist, act.track_id, act.duration.seconds, duration.seconds, act.album_cover_url)
 
+    async def spotify_embed(self, ctx, date, result):
+
+        title_print  = ""
+        artist_print = ""
+        played_print = ""
+        for row in result:
+            track_id        = row["track_id"]
+            title           = row["title"]
+            artist          = row["artist"]
+            play_time       = row["pt"]
+            
+            title_print  += f"{embedify(title)}\n"
+            artist_print += f"{embedify(artist)}\n"
+            played_print += f"{round(play_time)}\n"
+
+        if not title_print:
+            await ctx.send("No data corresponding to the input")
+            return
+
+        title           = f"List of the most played songs"
+        author          = f"~~ Spotify ~~"
+        description     = f"Based on saved data from \n{date.strftime('%Y-%m-%d %H:%M:%S')}"
+        thumbnail_url   = await self.bot.db.get_album_cover_url(result[0]["track_id"]) 
+        
+        embed = discord.Embed   (title= title, description=description, color=0x1DB954)
+        embed.set_author    (name = author)
+        embed.set_thumbnail (url  = thumbnail_url)
+        embed.add_field     (name="Song",       value=title_print,    inline=True)
+        embed.add_field     (name="Artist",     value=artist_print,   inline=True)
+        embed.add_field     (name="Played",     value=played_print,   inline=True)
+        embed.set_footer    (text="~ Thats it for this time ~")
+        embed.timestamp   = datetime.now()
+        await ctx.send      (embed=embed)
+
     @commands.group(name='spotify', invoke_without_command=True)
     async def _spotify(self, ctx, *, arg: str):
         try:
@@ -395,21 +455,92 @@ class Stats(commands.Cog):
             song = arg
 
         if isinstance(member, discord.Member):
-            await ctx.send(f'[Member] Getting music stats for {member.name}...')
+            msg = await ctx.send(f'[Member] Getting music stats for {member.name}...')
             
             # Search db for member info
-            result2 = await self.bot.db.get_song_by_id(member.id)
-        else:
-            await ctx.send(f'[Song] Getting music stats for "{song}"...')
-            # Search db for song name
-            # ...
+            result = await self.bot.db.get_song_by_id(member.id)
+            await self.spotify_embed(ctx, datetime.strptime("2020-01-25", '%Y-%m-%d'), result)
 
-    @_spotify.command(name='top')
-    async def _spotify_top(self, ctx, date):
+            await msg.edit(delete_after=5)
+
+        else:
+            try:
+                og_msg = await ctx.send(content=f'[Song] Getting music stats for "{song}"...', delete_after=60)
+
+                members = []
+                for member in ctx.guild.members:
+                    if not member.bot:
+                        members.append(member.id)
+
+                result = await self.bot.db.get_song_by_name(tuple(members), song)
+
+                if len(result) == 0:
+                    await og_msg.delete()
+                    await ctx.send(f"Could not find anything (searched for: {song})")
+                    return
+                elif (len(result) == 1):
+                    selected_song = result[0]["track_id"]
+                else:
+                    print_string = f'''Found multiple results based on "{song}".\nSelect one by typing the associated index (1 - {len(result)}).\n\n'''
+                    index_list = list(range(1, len(result)+1))
+                    for index, row in enumerate(result):
+                        title = row["title"]
+                        artist = row["artist"]
+                        print_string += f"{index+1}. {title} by {artist}\n"
+                    await ctx.send(print_string)
+
+                    def check(m):
+                        return m.content.isdigit() and int(m.content) in index_list
+                    try:
+                        msg = await self.bot.wait_for('message', timeout=60.0, check=check)
+                    except asyncio.TimeoutError:
+                        ctx.send("Time out.")
+                        return
+                    selected_song = result[int(msg.content)-1]["track_id"]
+
+                await og_msg.delete()
+                members = []
+                for member in ctx.guild.members:
+                    if not member.bot:
+                        members.append(member.id)
+                result = await self.bot.db.get_song_by_track_id(members, selected_song)
+                artist = result[0]["artist"]
+                title = result[0]["title"]
+                album = result[0]["album"]
+                print_string = f"**{title}** by {artist} (Album: {album})\n"
+
+                for index, row in enumerate(result):
+                    member = ctx.guild.get_member(row["user_id"])
+                    print_string += f"{index+1}. {str(member)} played the song {round(row['pt'],1)} times\n"
+
+                await ctx.send(print_string)
+
+            except Exception as e:
+                await ctx.send(e)
+                pass
+
+    @_spotify.group(name='top', invoke_without_command=True)
+    async def _spotify_top(self, ctx, date = None):
+        await ctx.send('">spotify top songs" to list songs\n">spotify top members" to list users')
+
+    @_spotify_top.command(name='members', aliases=["users"])
+    async def _spotify_top_members(self, ctx, date = None):
+        await ctx.send("To be implemented.")
+
+    @_spotify_top.command(name='songs')
+    async def _spotify_top_songs(self, ctx, date = None):
         '''
-        ">spotify top 1w" returns  the most played song from the last week
-        ">spotify top 2020-01-01" or ">spotify top 01-01-2020" returns the most played song since 01 jan 2020  
+        ">help spotify top" for examples
+        
+        ">spotify top" returns the most played songs since the bot started to track.
+        ">spotify top 1w" returns the most played songs from the last week. 
+        ">spotify top 2020-01-01" or ">spotify top 01-01-2020" returns the most played songs since 01 jan 2020.
         '''
+
+        # Get date from input
+        if date == None:
+            date = "2020-01-25"
+        
         try:
             date = datetime.strptime(date, '%d-%m-%Y')
         except:
@@ -432,6 +563,7 @@ class Stats(commands.Cog):
                 except:
                     pass
 
+        # Get user data from the selected date
         if date:
             try:
                 members = []
@@ -439,51 +571,27 @@ class Stats(commands.Cog):
                     if not member.bot:
                         members.append(member.id)
 
-                title_print  = ""
-                artist_print = ""
-                played_print = ""
+                msg = await ctx.send(f'Gather information from the database and building an embed..')
 
                 result = await self.bot.db.get_most_played_song(tuple(members), date)
-                for row in result:
-                    title       = row["title"]
-                    artist      = row["artist"]
-                    song_length = row["song_length"]
-                    play_time   = row["play_time"]
-                    
-                    if round(play_time/song_length) > 0:
-                        title_print  += f"{embedify(title)}\n"
-                        artist_print += f"{embedify(artist)}\n"
-                        played_print += f"{round(play_time/song_length)}\n"
+                await self.spotify_embed(ctx, date, result)
 
-                if not title_print:
-                    await ctx.send("No data corresponding to the input")
-                    return
-            
-                title           = f"List of the most played songs"
-                author          = f"~~ {str(ctx.guild.name)} ~~"
-                description     = f"Based on saved data from \n{date.strftime('%Y-%m-%d %H:%M:%S')}"
-                try:
-                    thumbnail_url = result[0]["album_cover_url"]
-                except expression as identifier:
-                    thumbnail_url = ctx.guild.icon_url
-                
-                embed = discord.Embed   (title= title, description=description, color=0x1DB954)
-                embed.set_author        (name = author)
-                embed.set_thumbnail     (url  = thumbnail_url)
-                embed.add_field(name="Song",       value=title_print,    inline=True)
-                embed.add_field(name="Artist",     value=artist_print,   inline=True)
-                embed.add_field(name="Played",     value=played_print,   inline=True)
-                embed.timestamp = datetime.now()
-                embed.set_footer(text="~ Thats it for this time ~")
-                await ctx.send(embed=embed)
+                await msg.edit(delete_after=5)
+
             except Exception as e:
                 print(e)
 
     @_spotify.error
     async def _spotify_error(self, ctx, error):
-        print("[Error] stats.py -> stats() -> _spotify_error -> Exception: {}".format(error))
-        await ctx.send("[Error] stats.py -> stats()  -> _spotify_error -> Exception: {}".format(error))
+        print(
+            f"{ctx.author} wrote the command: {ctx.message.content}\n"
+            f"[Error] stats.py -> _spotify_error:\n"
+            f"[Error] Error type: {type(error)}\n"
+            f"[Error] Error:      {error}\n")
 
+        await ctx.send('Type ">help spotify" for more information')
+        return
+       
 def embedify(text, len = 23):
     text = text[:len] + (text[len:] and '..')
     return text

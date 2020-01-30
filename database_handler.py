@@ -35,6 +35,30 @@ class Database():
                     INSERT INTO users
                         VALUES ($1)
                     ''', user_id)
+    
+    async def get_users(self, users:tuple, guild_id = None):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                if guild_id:
+                    result = await conn.fetch(f'''
+                    SELECT 
+                        users.user_id 
+                    FROM 
+                        users, servers 
+                    WHERE       users.user_id = servers.user_id
+                          AND   users.user_id = any($1::BIGINT[])
+                          AND   servers.server_id = $2;
+                    ''', users, guild_id)
+                    return result
+                else:
+                    result = await conn.fetch(f'''
+                    SELECT 
+                        user_id 
+                    FROM 
+                        users 
+                    WHERE user_id = any($1::BIGINT[])
+                    ''', users)
+                    return result
 
     async def add_server(self, user_id, server_id):
         async with self.pool.acquire() as conn:
@@ -44,13 +68,19 @@ class Database():
                     VALUES ( $1, $2 )
                 ''', user_id, server_id)
 
-    async def add_status(self, user_id):
+    async def add_status(self, user_id, status=None, time=None):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 result = await conn.execute(f'''
-                INSERT INTO status (user_id)
-                    VALUES ( $1 )
-                ''', user_id)
+                    INSERT INTO status 
+                        (user_id)
+                    VALUES 
+                        ( $1 )
+
+                    ON CONFLICT (user_id) DO UPDATE
+                        SET 
+                            {status} = status.{status} + $2
+                ''', user_id, time)
 
     async def get_most_played_game(self, users:tuple, limit=15):
         try:
@@ -99,30 +129,74 @@ class Database():
             async with conn.transaction():
                 try:
                     result = await conn.fetch('''
-                        SELECT title, album, artist, song_length, Sum(play_time) as play_time, album_cover_url
+                        SELECT track_id, title, artist, 
+                            SUM(play_time::decimal/song_length::decimal) as pt
                         FROM spotify
                         WHERE
                             t >= $2 
                             AND user_id = any($1::BIGINT[])
-                        GROUP BY title, album, artist, song_length, album_cover_url
-                        ORDER BY play_time DESC
+                        GROUP BY track_id, title, artist
+                        ORDER BY pt DESC
                         LIMIT 20;
                     ''', users, date)
                     return result
                 except Exception as e:
                     print(f"ERROR: {e}")
-    
 
     async def get_song_by_id(self, user_id):
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 result = await conn.fetch('''
-                    Select 
-                        title, artist, song_length/play_time as times
+                    SELECT 
+                        track_id, title, artist, 
+                        SUM(play_time::decimal/song_length::decimal) as pt
                     FROM spotify 
-                        where user_id = $1 
-                    ORDER BY times
+                    WHERE user_id = $1 
+                    GROUP BY track_id, title, artist
+                    ORDER BY pt DESC
+                    LIMIT 20
                 ''', user_id)
+                return result
+
+    async def get_song_by_track_id(self, users: tuple, track_id):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetch('''
+                    SELECT 
+                        user_id, title, artist, album,
+                        SUM(spotify.play_time::decimal/spotify.song_length::decimal) as pt
+                    FROM spotify 
+                    WHERE   track_id = $1
+                        AND user_id = any($2::BIGINT[])
+                    GROUP BY user_id, title, artist, album
+                    ORDER BY pt DESC
+                    LIMIT 20
+                ''', track_id, users)
+                return result
+
+    async def get_song_by_name(self, users: tuple, name):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetch('''
+                    SELECT DISTINCT track_id, title, album, artist
+                    FROM spotify
+                    WHERE 
+                        lower(title) ~ lower($1)
+                        AND user_id = any($2::BIGINT[]);
+                ''', name, users)
+                return result
+
+    async def get_album_cover_url(self, track_id):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetchval('''
+                    SELECT 
+                        album_cover_url
+                    FROM 
+                        spotify 
+                    WHERE 
+                        track_id = $1
+                ''', track_id)
                 return result
 
     # act.title, act.album, act.artist, act.track_id, act.duration.seconds, duration

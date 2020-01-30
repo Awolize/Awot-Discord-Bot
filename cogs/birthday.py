@@ -163,10 +163,5 @@ class Birthday(commands.Cog):
             await ctx.send(f"Error removing birthday. [{result}]")
             print(f'Error in remove birthday: {e}')
 
-
 def setup(bot):
     bot.add_cog(Birthday(bot))
-
-
-if __name__ == "__main__":
-    Birthday()
