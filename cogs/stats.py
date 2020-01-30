@@ -704,6 +704,19 @@ class Stats(commands.Cog):
             f"```"
             f"{avatar_url}"
         )
+
+        description = textwrap.dedent(f"""
+                **User Information**
+                Created: {created}
+                Profile: {user.mention}
+                ID: {user.id}
+                {custom_status}
+                **Member Information**
+                Joined: {joined}
+                Roles: {roles or None}
+            """)
+        
+
         await ctx.send(print_str)
 
         return
