@@ -186,6 +186,19 @@ class Database():
                 ''', name, users)
                 return result
 
+    async def get_status(self, user_id):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetchrow('''
+                    SELECT 
+                        *
+                    FROM 
+                        status 
+                    WHERE 
+                        user_id = $1
+                ''', user_id)
+                return result
+
     async def get_album_cover_url(self, track_id):
         async with self.pool.acquire() as conn:
             async with conn.transaction():

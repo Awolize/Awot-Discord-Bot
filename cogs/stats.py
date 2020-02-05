@@ -49,7 +49,7 @@ class Stats(commands.Cog):
                 self.start_song(member, song_act)
                 
             #  Add current Status data
-            self.current_status[member.id] = (member.status, datetime.now())
+            self.start_status(member)
 
     @commands.Cog.listener()
     async def on_guild_available(self, guild):
@@ -64,14 +64,16 @@ class Stats(commands.Cog):
         clock = datetime.now().strftime("%H:%M:%S") #local time
         print(f"[{clock}] [{str(member)}] Member joined guild [{member.guild.name}]\n")
         await self.add_user(member, member.guild.id)
+        self.start_status(member)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
         # was the guild that the user left the main guild of this member?
         clock = datetime.now().strftime("%H:%M:%S") #local time
         print(f"[{clock}] [{str(member)}] Member left guild [{member.guild.name}]\n")
-        if self.member_main_guild[member.id] == member.guild.id:
-            del self.member_main_guild[member.id]
+        if member.id in self.member_main_guild:
+            if self.member_main_guild[member.id] == member.guild.id:
+                del self.member_main_guild[member.id]
 
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
@@ -90,7 +92,6 @@ class Stats(commands.Cog):
         clock = datetime.now().strftime("%H:%M:%S") #local time
         print(f"[{clock}] Bot connected to guild: {guild.name}")
         print(guild)
-        await self.init([guild])
 
     @commands.Cog.listener()
     async def on_disconnect(self):
@@ -119,7 +120,7 @@ class Stats(commands.Cog):
                         self.start_song(member, song_act)
                         
                     #  Add current Status data
-                    self.current_status[member.id] = (member.status, datetime.now())
+                    self.start_status(member)
 
                 result = await self.bot.db.get_users(tuple(members), guild.id)
 
@@ -276,7 +277,7 @@ class Stats(commands.Cog):
                 if int(stopped_act.type) == 0:
                     if stopped_act.start > datetime.utcnow():
                         print("wtf is going on")
-                        print(stopped_act)
+                        print(member_after.name, stopped_act)
                     duration = datetime.utcnow()-stopped_act.start
                     await self.bot.db.add_game(member_id, stopped_act.name, duration.seconds)
                 stat_logger.info(f"[{clock}] {str(member_after):<20} {stopped_act.name:<30} -> {started_act.name:<30}")
@@ -320,9 +321,13 @@ class Stats(commands.Cog):
         self.current_status[member.id] = (member.status, datetime.now())
 
     async def end_status(self, member):
-        status, start_time = self.current_status[member.id]
-        time = (datetime.now() - start_time).seconds
-        await self.bot.db.add_status(member.id, status, time)
+        try:
+            status, start_time = self.current_status[member.id]
+            time = (datetime.now() - start_time).seconds
+            await self.bot.db.add_status(member.id, status, time)
+        except Exception as e:
+            clock = datetime.now().strftime("%H:%M:%S") #local time
+            print(f"[{clock}] [Error] end_status, passing")
 
     async def stats_embed(self, ctx, title:str, author:str, thumbnail_url:str, members: list, limit = 10):
 
@@ -451,6 +456,9 @@ class Stats(commands.Cog):
 
     @commands.group(name='spotify', invoke_without_command=True)
     async def _spotify(self, ctx, *, arg: str):
+        '''
+        Displays most played songs in the channel or by a user.
+        '''
         try:
             member = await commands.MemberConverter().convert(ctx, arg)
         except:
@@ -597,6 +605,10 @@ class Stats(commands.Cog):
        
     @commands.command(name='info', aliases=["about", "profile"])
     async def _info(self, ctx, member: discord.Member = None) -> None:
+        '''
+        User information and stats related to games and Spotify.
+        '''
+
         if member is None:
             member = ctx.author
 
@@ -663,81 +675,61 @@ class Stats(commands.Cog):
         except Exception as e:
             print(e)
 
-        try:
-            custom_status = ""
+        custom_status = ""
 
-            for act in member.activities:
-                if int(act.type) == 4 and act.name:
-                    name = discord.utils.escape_markdown(act.name)
+        for act in member.activities:
+            if int(act.type) == 4 and act.name:
+                name = discord.utils.escape_markdown(act.name)
 
-                    custom_status = f'Status: {name}\n'
-                    break
+                custom_status = f'Status: {name}\n'
+                break
 
-            spotify_song = ""
-            spotify_time = ""
-            game_name    = ""
-            game_time    = ""
+        spotify_song = ""
+        spotify_time = ""
+        game_name    = ""
+        game_time    = ""
 
-            if spotify_most_played_song:
-                spotify_song = spotify_most_played_song
+        if spotify_most_played_song:
+            spotify_song = spotify_most_played_song
 
-            if spotify_play_time:
-                spotify_time = f"{round(spotify_play_time/60/60)} h"
+        if spotify_play_time:
+            spotify_time = f"{round(spotify_play_time/60/60)} h"
 
-            if most_played_game:
-                game_name = most_played_game
+        if most_played_game:
+            game_name = most_played_game
 
-            if game_play_time:
-                game_time = f"{round(game_play_time/60/60)} h"
+        if game_play_time:
+            game_time = f"{round(game_play_time/60/60)} h"
 
-            online  = 0
-            idle    = 0 
-            dnd     = 0
-            offline = 0
+        roles = ", ".join(role.mention for role in member.roles if role.name != "@everyone")
 
-            emoji_online = "<:doubt:672523430431555584>"
-            await ctx.send(emoji_online)
+        status = await self.bot.db.get_status(member.id)
 
-            emoji_online = f"<:Zergling:672515914666606596>"
-            await ctx.send(emoji_online)
+        description = textwrap.dedent(f"""
+                **User Information**
+                Profile: {member.mention}
+                {custom_status}
+                **Member Information**
+                Nickname: {member.nick or member.name}
+                Joined: {member.joined_at.strftime('%Y-%m-%d')}
+                Roles: {roles or None}
 
-            emoji_online = await commands.EmojiConverter().convert(ctx, "596576749790429200")
-            emoji_online = await commands.EmojiConverter().convert(ctx, "672512684620513310")
-            emoji_online = await commands.EmojiConverter().convert(ctx, "672512684620513310")
+                **Stats Information**
+                Most played:
+                - Game: {game_name or None}
+                - Song: {spotify_song or None}
 
-            roles = ", ".join(role.mention for role in member.roles if role.name != "@everyone")
+                Total time:
+                - Gaming: {game_time or None}
+                - Spotify: {spotify_time or None}
 
-            description = textwrap.dedent(f"""
-                    **User Information**
-                    Profile: {member.mention}
-                    {custom_status}
-                    **Member Information**
-                    Nickname: {member.nick}
-                    Joined: {member.joined_at.strftime('%Y-%m-%d')}
-                    Roles: {roles or None}
-
-                    **Stats Information**
-                    Most played:
-                    - Game: {game_name or None}
-                    - Song: {spotify_song or None}
-
-                    Total time:
-                    - Gaming: {game_time or None}
-                    - Spotify: {spotify_time or None}
-
-                    Status:
-                    {emoji_online} {online}
-                    :status_idle: {idle}
-                    :status_dnd: {dnd}
-                    :status_offline: {offline}
-                """)
-        except Exception as e:
-            print(e)
-            return
+                Status:
+                <:status_online:672558042587332619> {round(status["online"]/60/60, 2):,} h <:status_idle:672558042860093472> {round(status["idle"]/60/60, 2):,} h <:status_dnd:672558043124334612> {round(status["dnd"]/60/60, 2):,} h <:status_offline:672558044961308682> {round(status["offline"]/60/60, 2):,} h
+            """)
 
         title           = f"A summary of {str(member)}"
         author          = f"~~ Awot ~~"
-        thumbnail_url   = member.avatar_url
+        thumbnail_url   = member.avatar_url_as(static_format="png", size=1024)
 
         embed = discord.Embed   (title= title, description=description, color=discord.Color.gold())
         embed.set_author    (name = author, url = self.bot.user.avatar_url, icon_url = self.bot.user.avatar_url)
@@ -749,32 +741,62 @@ class Stats(commands.Cog):
     @commands.command(name='server', aliases=["serverinfo"])
     async def _server(self, ctx):
         '''
-            Members
-        :status_online: 1598
-        :status_idle: 2361
-        :status_dnd: 862
-        :status_offline: 28661
-
-        description=textwrap.dedent(f"""
-            **{username} information**
-            Created: {created}
-            Voice region: {region}
-            Features: {features}
-            **Counts**
-            Members: {member_count:,}
-            Roles: {roles}
-            Text: {text_channels}
-            Voice: {voice_channels}
-            Channel categories: {category_channels}
-            **Members**
-            {constants.Emojis.status_online} {online}
-            {constants.Emojis.status_idle} {idle}
-            {constants.Emojis.status_dnd} {dnd}
-            {constants.Emojis.status_offline} {offline}
-        """)
+        Server information and stats.
         '''
-        pass            
-    
+
+        guild = ctx.guild
+
+        status = {}
+        status["online"] = 0
+        status["idle"] = 0
+        status["dnd"] = 0
+        status["offline"] = 0
+        for member in guild.members:
+            status[member.status.name] += 1
+
+        features = ", ".join([str(feature) for feature in guild.features])
+        roles = len(guild.roles)
+        text_channels = len(guild.text_channels)
+        voice_channels = len(guild.voice_channels)
+        categories = len(guild.categories)
+
+        guild_description = ""
+        if guild.description:
+            guild_description = f"Description: {guild.description}\n"
+        
+        description=textwrap.dedent(f"""
+            **General information**
+            Owner: {guild.owner.mention}
+            Created: {guild.created_at.strftime('%Y-%m-%d')}
+            Voice region: {guild.region}
+            Features: {features}
+            {guild_description}
+            **Counts**
+            Members: {guild.member_count:,}
+            Roles: {roles:,}
+            Text: {text_channels:,}
+            Voice: {voice_channels:,}
+            Channel categories: {categories:,}
+
+            **Members**
+            <:status_online:672558042587332619> {status["online"]} 
+            <:status_idle:672558042860093472> {status["idle"]} 
+            <:status_dnd:672558043124334612> {status["dnd"]} 
+            <:status_offline:672558044961308682> {status["offline"]}
+        """)
+
+        title           = f"{str(guild)}"
+        author          = f"~~ Awot ~~"
+        thumbnail_url   = guild.icon_url_as(static_format="png", size=1024)
+
+        embed = discord.Embed   (title= title, description=description, color=discord.Color.gold())
+        embed.set_author    (name = author, url = self.bot.user.avatar_url, icon_url = self.bot.user.avatar_url)
+        embed.set_thumbnail (url  = thumbnail_url)
+        if guild.discovery_splash:
+            embed.set_image (url  = guild.discovery_splash)
+        embed.set_footer    (text=f"ID: {guild.id}")
+        await ctx.send      (embed=embed)
+
     
 def embedify(text, len = 23):
     text = text[:len] + (text[len:] and '..')
@@ -849,8 +871,7 @@ def activity_diff(list1, list2):
         return None
 
 def setup(bot):
-    stats = Stats(bot)
-    bot.add_cog(stats)
+    bot.add_cog(Stats(bot))
 
 def teardown(bot):
     pass

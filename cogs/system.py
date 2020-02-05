@@ -6,7 +6,7 @@ from discord.ext import commands
 
 class System(commands.Cog):
     """
-    Get system information about the system the bot is running on.
+    Commands related to the bot itself, system details, etc
     """
 
     def __init__(self, bot):
@@ -16,7 +16,7 @@ class System(commands.Cog):
     @commands.command(name="system", aliases=["sys"])
     async def system(self, ctx):
         """
-        Display system information
+        Display system information.
         """
 
         embed = discord.Embed(
@@ -27,7 +27,7 @@ class System(commands.Cog):
         #    format="png"), name=f"{self.bot.user.name}'s system stats")
 
         thumbnail_url = self.bot.get_user(
-            self.bot.owner).avatar_url_as(format="png")
+            self.bot.owner_id).avatar_url_as(format="png")
         url = self.bot.user.avatar_url_as(format="png")
 
         embed.set_author(icon_url=url,
@@ -53,6 +53,91 @@ class System(commands.Cog):
                         f"**CPU usage:** {self.process.cpu_percent()}%\n"
                         f"**Threads:** {self.process.num_threads()}")
         await ctx.send(embed=embed)
+
+    # TODO
+    @commands.command(name="bot")
+    async def _bot(self, ctx):
+        '''
+        Information about the bot.
+        '''
+        pass
+
+    # TODO
+    @commands.group(name='ping', invoke_without_command=True)
+    async def _ping(self, ctx):
+        '''
+        Shows the latency of the bot.
+        '''
+
+        latency = self.bot.latency
+        await ctx.send("Pong! {:.0f} ms".format(latency*1000/2))
+
+    # TODO
+    @_ping.command(name="graph", aliases=["g"])
+    async def _ping_graph(self, ctx):
+        """
+        Ping history.
+        """
+        pass
+
+    @commands.command(name="source")
+    async def _source(self, ctx):
+        """
+        Get the github link to the repository.
+        """
+
+        await ctx.send(f"<https://github.com/Awolize/Awot-Discord-Bot>")
+
+    @commands.group(name='reload', hidden=True, invoke_without_command=True)
+    async def _reload(self, ctx, *, module):
+        """
+        Reloads a module.
+        """
+        
+        if ctx.author.id not in self.bot.owner_ids:
+            await ctx.send("You do not have permission for this command.")
+            return
+
+        try:
+            self.bot.reload_extension(f"cogs.{module.lower()}")
+        except commands.ExtensionError as e:
+            await ctx.send(f'{e.__class__.__name__}: {e}')
+        else:
+            await ctx.send('👌')
+
+    @_reload.command(name='all', hidden=True)
+    async def _reload_all(self, ctx):
+        """
+        Reloads all modules, while pulling from git.
+        """
+
+        if ctx.author.id not in self.bot.owner_ids:
+            await ctx.send("You do not have permission for this command.")
+            return
+
+        msg = await ctx.send("Reloading all cogs...\n")
+        content = msg.content + "\n"
+
+        cogs = list(self.bot.cogs)
+        successfull_reloads = 0
+        for cog in cogs:
+            cog = cog.lower()
+            try:
+                self.bot.reload_extension(f"cogs.{cog}")
+                temp = f"👍 Reloaded cogs.{cog}\n"
+                successfull_reloads += 1
+            except commands.ExtensionError as e:
+                temp = f'{e.__class__.__name__}: {e} 👎\n'
+            except Exception as e:
+                print(f"ERRRRRRRRRRORRRRRRRRRRRRRRRRRR: {e}")
+            content += temp
+                
+        content += f"\nSuccessfully reloaded [ {successfull_reloads} / {len(cogs)} ]"
+        await msg.edit(content=content)
+        if successfull_reloads == len(cogs):
+            await msg.add_reaction("✅")
+        else:
+            await msg.add_reaction("❌")
 
 
 def setup(bot):

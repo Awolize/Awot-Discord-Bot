@@ -78,8 +78,8 @@ class Birthday(commands.Cog):
         # sleep until BIRTHDAY_PRINT_TIME
         await asyncio.sleep(delta)
 
-    @commands.command(name="getBirthday", aliases=["bday"])
-    async def get_birthday(self, ctx, member: discord.Member = None):
+    @commands.command(name="bday", aliases=["getBirthday", "getbday"])
+    async def _bday(self, ctx, member: discord.Member = None):
         '''
         Shows birthday of a specific member.
         '''
@@ -99,12 +99,12 @@ class Birthday(commands.Cog):
         else:
             await ctx.send(f"{member.mention}'s birthday: {date}.")
 
-    @get_birthday.error
-    async def get_birthday_error(self, ctx, error):
+    @_bday.error
+    async def _bday_error(self, ctx, error):
         await ctx.send(f"[Error] - [Birthday] - [bday] - {error}.")
 
-    @commands.command(name="setBirthday", aliases=["setbday"])
-    async def set_birthday(self, ctx, date: str, member: discord.Member = None):
+    @commands.command(name="setbday", aliases=["setBirthday"])
+    async def _setbday(self, ctx, date: str, member: discord.Member = None):
         '''
         Format [yyyy-mm-dd]. Add birthday to the database. Only Admins can add others birthdays. 
 
@@ -138,12 +138,12 @@ class Birthday(commands.Cog):
         except Exception as e:
             msg = await ctx.send(f"Error setting {member.name}'s birthday. Already set or wrong input")
 
-    @set_birthday.error
-    async def set_birthday_error(self, ctx, error):
+    @_setbday.error
+    async def _setbday_error(self, ctx, error):
         await ctx.send(f"[Error] - [Birthday] - [set_birthday] - {error}.")
 
-    @commands.command(name="removeBirthday", aliases=["removebday"])
-    async def remove_birthday(self, ctx, member: discord.Member = None):
+    @commands.command(name="removebday", aliases=["removeBirthday"])
+    async def _removebday(self, ctx, member: discord.Member = None):
         '''
         Removes birthday from a member. (Only Admins can remove others bdays. You can remove your own one.)
         '''
