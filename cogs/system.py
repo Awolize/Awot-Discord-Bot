@@ -103,23 +103,7 @@ class System(commands.Cog):
             async with conn.transaction():
                 result = await conn.fetch("SELECT * FROM pings")
 
-
         plt.style.use("ggplot")
-        '''plt.rcParams.update({
-            "lines.color": "white",
-            "patch.edgecolor": "white",
-            "text.color": "black",
-            "axes.facecolor": "white",
-            "axes.edgecolor": "lightgray",
-            "axes.labelcolor": "white",
-            "xtick.color": "white",
-            "ytick.color": "white",
-            "grid.color": "lightgray",
-            "figure.facecolor": "black",
-            "figure.edgecolor": "black",
-            "savefig.facecolor": "black",
-            "savefig.edgecolor": "black"
-        })'''
 
         values = []
         dates = []
