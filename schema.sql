@@ -22,6 +22,14 @@ CREATE TABLE servers(
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
+CREATE TABLE server_info(
+    server_id   BIGINT NOT NULL,
+    users       INT    NOT NULL,
+    t           TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP(0),
+
+    PRIMARY KEY (server_id, t)
+);
+
 CREATE TABLE status(
     user_id    BIGINT NOT NULL,
     online     INT NOT NULL DEFAULT 0,

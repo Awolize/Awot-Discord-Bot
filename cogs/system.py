@@ -1,10 +1,9 @@
 import psutil
-import math
+from math import isnan
 import discord
 from discord.ext import commands, tasks
-
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+from asyncio import sleep
+from datetime import datetime
 
 
 class System(commands.Cog):
@@ -23,7 +22,7 @@ class System(commands.Cog):
     @tasks.loop(minutes=1)
     async def _ping_save(self):
         latency = self.bot.latency
-        if isinstance(latency, float) and not math.isnan(latency):
+        if isinstance(latency, float) and not isnan(latency):
             async with self.bot.db.pool.acquire() as conn:
                 async with conn.transaction():
                     await conn.execute(f'''
@@ -82,7 +81,6 @@ class System(commands.Cog):
         '''
         pass
 
-    # TODO
     @commands.group(name='ping', invoke_without_command=True)
     async def _ping(self, ctx):
         '''
@@ -90,14 +88,17 @@ class System(commands.Cog):
         '''
 
         latency = self.bot.latency
-        await ctx.send("Pong! {:.0f} ms".format(latency*1000/2))
+        await ctx.send("🏓 Pong! {:.0f} ms".format(latency*1000/2))
 
-    # TODO
     @_ping.command(name="graph", aliases=["g"])
     async def _ping_graph(self, ctx):
         """
         Ping history displayed in a graph
         """
+
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        from io import BytesIO
 
         async with self.bot.db.pool.acquire() as conn:
             async with conn.transaction():
@@ -111,14 +112,13 @@ class System(commands.Cog):
             values.append(row["ping"]*1000/2)
             dates.append(row["t"])
 
-        plt.title ("Ping")
+        plt.title("Ping")
         plt.xlabel("Time (UTC)")
         plt.xticks(rotation=60)
         plt.ylabel("(ms)")
         plt.tight_layout(pad=2.5)
         plt.plot_date(dates, values, 'b-')
-        
-        from io import BytesIO
+
         buffer = BytesIO()
         plt.savefig(buffer, format='png', transparent=False)
         buffer.seek(0)
@@ -131,7 +131,7 @@ class System(commands.Cog):
         Get the github link to the repository.
         """
 
-        await ctx.send(f"<https://github.com/Awolize/Awot-Discord-Bot>")
+        await ctx.send(f"https://github.com/Awolize/Awot-Discord-Bot")
 
     @commands.group(name='reload', hidden=True, invoke_without_command=True)
     async def _reload(self, ctx, *, module):

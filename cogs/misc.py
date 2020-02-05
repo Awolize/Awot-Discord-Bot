@@ -1,14 +1,16 @@
 import discord
-from discord.ext import commands
-import asyncio
+from discord.ext import commands, tasks
 import itertools
+from asyncio import sleep
+from datetime import datetime
 
 import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.FileHandler("User.log")
-handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)8s - %(message)s"))
+handler.setFormatter(logging.Formatter(
+    "%(asctime)s - %(levelname)8s - %(message)s"))
 logger.addHandler(handler)
 
 
@@ -22,33 +24,96 @@ class Misc(commands.Cog):
         self.old_help_command = self.bot.help_command
         self.bot.help_command = AwotHelpCommand()
         self.bot.help_command.cog = self
+        self._user_growth_save.start()
+
+    def cog_unload(self):
+        self._user_growth_save.stop()
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, e):
         print(e)
         logger.warning(f"{e}")
-        pass
 
     @commands.Cog.listener()
     async def on_command(self, ctx):
         logger.info(f"{ctx.message.author} - {ctx.message.content}")
-        pass
 
     @commands.command()
     async def joined(self, ctx, *, member: discord.Member):
         '''        
         Shows the date [@name] joined the server.
         '''
-        
+
         await ctx.send('{} joined on {:.19}'.format(member.mention, str(member.joined_at)))
 
-    # TODO
-    @commands.command(name='growth')
+    @tasks.loop(hours=24)
+    async def _user_growth_save(self):
+        await self.bot.wait_until_ready()
+
+        for guild in self.bot.guilds:
+            async with self.bot.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(f'''
+                    INSERT INTO 
+                        server_growth (server_id, users)
+                    VALUES 
+                        ( $1, $2 )
+                    ''', guild.id, len(guild.members))
+
+    @_user_growth_save.before_loop
+    async def _before_user_growth_save(self):
+        await self.bot.wait_until_ready()
+
+        # Calc delta til 03.00
+        now = datetime.utcnow().strftime('%H:%M:%S')
+        delta = (datetime.strptime("03:00:00", '%H:%M:%S') -
+                 datetime.strptime(now, '%H:%M:%S')).seconds
+
+        await sleep(delta)
+
+    @commands.command(name="growth")
     async def _growth(self, ctx):
-        '''
-        Member growth graph.
-        '''
-        pass
+        """
+        Ping history displayed in a graph
+        """
+
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        from io import BytesIO
+
+        async with self.bot.db.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetch('''
+                    SELECT 
+                        * 
+                    FROM 
+                        server_growth
+                    WHERE 
+                        server_id = $1
+                ''', ctx.guild.id)
+
+        plt.style.use("ggplot")
+
+        values = []
+        dates = []
+        for row in result:
+            values.append(row["users"])
+            dates.append(row["t"])
+
+        plt.title("Member Growth")
+        plt.xlabel("Time (UTC)")
+        plt.xticks(rotation=60)
+        plt.ylabel("Members")
+        plt.tight_layout(pad=2.5)
+        plt.plot_date(dates, values, 'b-')
+        plt.ylim(bottom=0, top=max(values)*2)
+
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', transparent=False)
+        buffer.seek(0)
+
+        await ctx.send(file=discord.File(fp=buffer, filename="ping.png"))
+
 
 class AwotHelpCommand(commands.DefaultHelpCommand):
     def __init__(self):
@@ -61,14 +126,15 @@ class AwotHelpCommand(commands.DefaultHelpCommand):
 
         ctx = self.context
 
-        description= f"Use `{ctx.prefix}help [Command/Category]` for more info on a command or category.\n"
+        description = f"Use `{ctx.prefix}help [Command/Category]` for more info on a command or category.\n"
 
         for cog in sorted(ctx.bot.cogs.values(), key=lambda cog: cog.qualified_name):
 
             if ctx.author.id in ctx.bot.owner_ids:
                 cog_commands = [command for command in cog.get_commands()]
             else:
-                cog_commands = [command for command in cog.get_commands() if command.hidden == False]
+                cog_commands = [
+                    command for command in cog.get_commands() if command.hidden == False]
 
             if len(cog_commands) == 0:
                 continue
@@ -89,11 +155,13 @@ class AwotHelpCommand(commands.DefaultHelpCommand):
 
         await ctx.send(embed=embed)
 
-        #await super().send_bot_help(mapping)
+        # await super().send_bot_help(mapping)
+
 
 def embedify(text: str, len: int = 55) -> str:
     text = text[:len] + (text[len:] and '..')
     return text
+
 
 def setup(bot):
     bot.add_cog(Misc(bot))
