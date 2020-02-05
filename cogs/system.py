@@ -98,9 +98,28 @@ class System(commands.Cog):
         """
         Ping history displayed in a graph
         """
+
         async with self.bot.db.pool.acquire() as conn:
             async with conn.transaction():
                 result = await conn.fetch("SELECT * FROM pings")
+
+
+        plt.style.use("ggplot")
+        '''plt.rcParams.update({
+            "lines.color": "white",
+            "patch.edgecolor": "white",
+            "text.color": "black",
+            "axes.facecolor": "white",
+            "axes.edgecolor": "lightgray",
+            "axes.labelcolor": "white",
+            "xtick.color": "white",
+            "ytick.color": "white",
+            "grid.color": "lightgray",
+            "figure.facecolor": "black",
+            "figure.edgecolor": "black",
+            "savefig.facecolor": "black",
+            "savefig.edgecolor": "black"
+        })'''
 
         values = []
         dates = []
@@ -108,23 +127,19 @@ class System(commands.Cog):
             values.append(row["ping"]*1000/2)
             dates.append(row["t"])
 
-        plt.title("Ping")
-        plt.xlabel('Date')
-        plt.xticks(rotation=90)
+        plt.title ("Ping")
+        plt.xlabel("Time (UTC)")
+        plt.xticks(rotation=60)
         plt.ylabel("(ms)")
-        plt.tight_layout()
+        plt.tight_layout(pad=2.5)
         plt.plot_date(dates, values, 'b-')
+        
+        from io import BytesIO
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', transparent=False)
+        buffer.seek(0)
 
-        if 1:  # Debug
-            plt.savefig('ping_graph.png')
-            import io
-            buf = io.BytesIO()
-            plt.savefig(buf, format='png')
-            await ctx.send(file=discord.File(fp=buf, filename="Ping.png"))
-
-        else:
-            plt.savefig('ping_graph.png')
-            await ctx.send(file=discord.File('ping_graph.png'))
+        await ctx.send(file=discord.File(fp=buffer, filename="ping.png"))
 
     @commands.command(name="source")
     async def _source(self, ctx):
