@@ -76,3 +76,9 @@ CREATE TABLE birthday(
     PRIMARY KEY (user_id, server_id),
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 ); 
+
+CREATE TABLE pings(
+    ping     	INT NOT NULL,
+	t          	TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP(0),
+    PRIMARY KEY (ping, t)
+);

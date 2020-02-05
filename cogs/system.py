@@ -1,7 +1,10 @@
 import psutil
-
+import math
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
+
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 
 class System(commands.Cog):
@@ -12,9 +15,26 @@ class System(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.process = bot.process
+        self._ping_save.start()
+
+    def cog_unload(self):
+        self._ping_save.stop()
+
+    @tasks.loop(minutes=1)
+    async def _ping_save(self):
+        latency = self.bot.latency
+        if isinstance(latency, float) and not math.isnan(latency):
+            async with self.bot.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(f'''
+                    INSERT INTO 
+                        pings (ping)
+                    VALUES 
+                        ( $1 )
+                    ''', latency)
 
     @commands.command(name="system", aliases=["sys"])
-    async def system(self, ctx):
+    async def _system(self, ctx):
         """
         Display system information.
         """
@@ -76,9 +96,35 @@ class System(commands.Cog):
     @_ping.command(name="graph", aliases=["g"])
     async def _ping_graph(self, ctx):
         """
-        Ping history.
+        Ping history displayed in a graph
         """
-        pass
+        async with self.bot.db.pool.acquire() as conn:
+            async with conn.transaction():
+                result = await conn.fetch("SELECT * FROM pings")
+
+        values = []
+        dates = []
+        for row in result:
+            values.append(row["ping"]*1000/2)
+            dates.append(row["t"])
+
+        plt.title("Ping")
+        plt.xlabel('Date')
+        plt.xticks(rotation=90)
+        plt.ylabel("(ms)")
+        plt.tight_layout()
+        plt.plot_date(dates, values, 'b-')
+
+        if 1:  # Debug
+            plt.savefig('ping_graph.png')
+            import io
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            await ctx.send(file=discord.File(fp=buf, filename="Ping.png"))
+
+        else:
+            plt.savefig('ping_graph.png')
+            await ctx.send(file=discord.File('ping_graph.png'))
 
     @commands.command(name="source")
     async def _source(self, ctx):
@@ -93,7 +139,7 @@ class System(commands.Cog):
         """
         Reloads a module.
         """
-        
+
         if ctx.author.id not in self.bot.owner_ids:
             await ctx.send("You do not have permission for this command.")
             return
@@ -131,7 +177,7 @@ class System(commands.Cog):
             except Exception as e:
                 print(f"ERRRRRRRRRRORRRRRRRRRRRRRRRRRR: {e}")
             content += temp
-                
+
         content += f"\nSuccessfully reloaded [ {successfull_reloads} / {len(cogs)} ]"
         await msg.edit(content=content)
         if successfull_reloads == len(cogs):

@@ -7,8 +7,12 @@
 
 ### Todos
 
- - Finish rewrite of local storage (JSON -> SQLite3, using both atm)
- - Add Light Mode
+ - [BOT] Rewriteing SQLite to PostgreSQL, Done
+ - [BOT] "Me" command
+ - [BOT] Ping graph
+ - [BOT] printbday 00:00
+ - [BOT] User Growth
+ - [APP] Add Light Mode
 
 License
 ----
