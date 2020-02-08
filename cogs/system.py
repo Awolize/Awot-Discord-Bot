@@ -2,6 +2,8 @@ import psutil
 from math import isnan
 import discord
 from discord.ext import commands, tasks
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 class System(commands.Cog):
     """
@@ -93,12 +95,10 @@ class System(commands.Cog):
         Ping history displayed in a graph
         """
 
-        import matplotlib.pyplot as plt
-        from io import BytesIO
-
         async with self.bot.db.pool.acquire() as conn:
             async with conn.transaction():
-                result = await conn.fetch("SELECT * FROM pings")
+                result = await conn.fetch("SELECT * FROM pings where t >= NOW() - '24 hours'::INTERVAL")
+                #result = await conn.fetch("SELECT * FROM pings")
 
         plt.style.use("ggplot")
 
@@ -108,7 +108,7 @@ class System(commands.Cog):
             values.append(row["ping"]*1000/2)
             dates.append(row["t"])
 
-        plt.title("Ping")
+        plt.title("Ping (last 24 h)")
         plt.xlabel("Time (UTC)")
         plt.xticks(rotation=60)
         plt.ylabel("(ms)")
@@ -119,7 +119,10 @@ class System(commands.Cog):
         plt.savefig(buffer, format='png', transparent=False)
         buffer.seek(0)
 
-        await ctx.send(file=discord.File(fp=buffer, filename="ping.png"))
+        plt.clf()
+        plt.cla()
+
+        await ctx.send(file=discord.File(fp=buffer, filename="Ping.png"))
 
     @commands.command(name="source")
     async def _source(self, ctx):

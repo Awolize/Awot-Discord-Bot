@@ -31,7 +31,7 @@ song_logger.addHandler(handler)
 
 class Stats(commands.Cog):
     """
-    Stat: handels game time and stats
+    Stat: handles game time and stats
     """
 
     def __init__(self, bot):
@@ -546,13 +546,13 @@ class Stats(commands.Cog):
 
     @_spotify_top.command(name='songs')
     async def _spotify_top_songs(self, ctx, date=None):
-        '''
+        """
         ">help spotify top" for examples
-        
+
         ">spotify top" returns the most played songs since the bot started to track.
-        ">spotify top 1w" returns the most played songs from the last week. 
+        ">spotify top 1w" returns the most played songs from the last week.
         ">spotify top 2020-01-01" or ">spotify top 01-01-2020" returns the most played songs since 01 jan 2020.
-        '''
+        """
 
         # Get date from input
         if date is None:
@@ -804,18 +804,15 @@ def embedify(text, length=23):
     text = text[:length] + (text[length:] and '..')
     return text
 
-
-class Song():
+class Song:
     def __init__(self, act):
         self.song = act
         self.start = datetime.now()
-
 
 def get_activity_by_type(list1, activity_type: discord.ActivityType):
     for act in list1:
         if act.type == activity_type:
             return act
-
 
 def activity_same(list1, list2):
     try:
@@ -840,7 +837,6 @@ def activity_same(list1, list2):
     except Exception as e:
         print(f"[ERROR] - [activity_diff] - {e}")
         return False
-
 
 # based on names
 def activity_diff(list1, list2):
@@ -875,10 +871,8 @@ def activity_diff(list1, list2):
         print(f"[ERROR] - [activity_diff] - {e}")
         return None
 
-
 def setup(bot):
     bot.add_cog(Stats(bot))
-
 
 def teardown(bot):
     pass

@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands, tasks
 from asyncio import sleep
 from datetime import datetime
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 import logging
 
@@ -45,7 +47,7 @@ class Misc(commands.Cog):
 
         await ctx.send('{} joined on {:.19}'.format(member.mention, str(member.joined_at)))
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=12)
     async def _user_growth_save(self):
         await self.bot.wait_until_ready()
 
@@ -59,7 +61,7 @@ class Misc(commands.Cog):
                         ( $1, $2 )
                     ''', guild.id, len(guild.members))
 
-    @_user_growth_save.before_loop
+        '''    @_user_growth_save.before_loop
     async def _before_user_growth_save(self):
         await self.bot.wait_until_ready()
 
@@ -68,7 +70,7 @@ class Misc(commands.Cog):
         delta = (datetime.strptime("03:00:00", '%H:%M:%S') -
                  datetime.strptime(now, '%H:%M:%S')).seconds
 
-        await sleep(delta)
+        await sleep(delta)'''
 
     @commands.command(name="growth")
     async def _growth(self, ctx):
@@ -76,42 +78,44 @@ class Misc(commands.Cog):
         Ping history displayed in a graph
         """
 
-        import matplotlib.pyplot as plt
-        from io import BytesIO
+        try:
+            async with self.bot.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    result = await conn.fetch('''
+                        SELECT 
+                            * 
+                        FROM 
+                            server_growth
+                        WHERE 
+                            server_id = $1
+                    ''', ctx.guild.id)
 
-        async with self.bot.db.pool.acquire() as conn:
-            async with conn.transaction():
-                result = await conn.fetch('''
-                    SELECT 
-                        * 
-                    FROM 
-                        server_growth
-                    WHERE 
-                        server_id = $1
-                ''', ctx.guild.id)
+            plt.style.use("ggplot")
 
-        plt.style.use("ggplot")
+            values = []
+            dates = []
+            for row in result:
+                values.append(row["users"])
+                dates.append(row["t"])
 
-        values = []
-        dates = []
-        for row in result:
-            values.append(row["users"])
-            dates.append(row["t"])
+            plt.title("Member Growth")
+            plt.xlabel("Time (UTC)")
+            plt.xticks(rotation=60)
+            plt.ylabel("Members")
+            plt.tight_layout(pad=2.5)
+            plt.plot_date(dates, values, 'b-')
+            plt.ylim(bottom=0, top=max(values)*2)
 
-        plt.title("Member Growth")
-        plt.xlabel("Time (UTC)")
-        plt.xticks(rotation=60)
-        plt.ylabel("Members")
-        plt.tight_layout(pad=2.5)
-        plt.plot_date(dates, values, 'b-')
-        plt.ylim(bottom=0, top=max(values)*2)
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', transparent=False)
+            buffer.seek(0)
 
-        buffer = BytesIO()
-        plt.savefig(buffer, format='png', transparent=False)
-        buffer.seek(0)
+            plt.clf()
+            plt.cla()
 
-        await ctx.send(file=discord.File(fp=buffer, filename="ping.png"))
-
+            await ctx.send(file=discord.File(fp=buffer, filename="Member_Growth.png"))
+        except Exception as e:
+            print(e)
 
 class AwotHelpCommand(commands.DefaultHelpCommand):
     def __init__(self):
@@ -155,11 +159,9 @@ class AwotHelpCommand(commands.DefaultHelpCommand):
 
         # await super().send_bot_help(mapping)
 
-
 def embedify(text: str, len: int = 55) -> str:
     text = text[:len] + (text[len:] and '..')
     return text
-
 
 def setup(bot):
     bot.add_cog(Misc(bot))

@@ -39,6 +39,5 @@ class Presence(commands.Cog):
         if self.presence_list_index > (len(presence_list)-1):
             self.presence_list_index = 0
 
-
 def setup(bot):
     bot.add_cog(Presence(bot))

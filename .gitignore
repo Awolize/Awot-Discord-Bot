@@ -8,3 +8,10 @@ firestore/serviceAccountKey.json
 config.py
 *.log
 /venv/
+.idea/.gitignore
+.idea/Awot - DiscordBot.iml
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/dictionaries/alexs.xml
+.idea/inspectionProfiles/profiles_settings.xml
