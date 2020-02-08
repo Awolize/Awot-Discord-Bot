@@ -26,12 +26,12 @@ class Database():
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 if name:
-                    result = await conn.execute(f'''
+                    result = await conn.execute('''
                     INSERT INTO users (user_id, name)
                         VALUES ( $1, $2 )
                     ''', user_id, name)
                 else:
-                    result = await conn.execute(f'''
+                    result = await conn.execute('''
                     INSERT INTO users
                         VALUES ($1)
                     ''', user_id)
