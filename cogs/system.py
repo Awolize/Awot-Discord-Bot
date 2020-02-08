@@ -2,9 +2,6 @@ import psutil
 from math import isnan
 import discord
 from discord.ext import commands, tasks
-from asyncio import sleep
-from datetime import datetime
-
 
 class System(commands.Cog):
     """
@@ -97,7 +94,6 @@ class System(commands.Cog):
         """
 
         import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
         from io import BytesIO
 
         async with self.bot.db.pool.acquire() as conn:
@@ -164,22 +160,23 @@ class System(commands.Cog):
         content = msg.content + "\n"
 
         cogs = list(self.bot.cogs)
-        successfull_reloads = 0
+        successful_reloads = 0
+        temp = ""
         for cog in cogs:
             cog = cog.lower()
             try:
                 self.bot.reload_extension(f"cogs.{cog}")
                 temp = f"👍 Reloaded cogs.{cog}\n"
-                successfull_reloads += 1
+                successful_reloads += 1
             except commands.ExtensionError as e:
                 temp = f'{e.__class__.__name__}: {e} 👎\n'
             except Exception as e:
                 print(f"ERRRRRRRRRRORRRRRRRRRRRRRRRRRR: {e}")
             content += temp
 
-        content += f"\nSuccessfully reloaded [ {successfull_reloads} / {len(cogs)} ]"
+        content += f"\nSuccessfully reloaded [ {successful_reloads} / {len(cogs)} ]"
         await msg.edit(content=content)
-        if successfull_reloads == len(cogs):
+        if successful_reloads == len(cogs):
             await msg.add_reaction("✅")
         else:
             await msg.add_reaction("❌")

@@ -7,3 +7,4 @@ firestore/serviceAccountKey.json
 *.out
 config.py
 *.log
+/venv/

@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands, tasks
-import itertools
 from asyncio import sleep
 from datetime import datetime
 
@@ -78,7 +77,6 @@ class Misc(commands.Cog):
         """
 
         import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
         from io import BytesIO
 
         async with self.bot.db.pool.acquire() as conn:
