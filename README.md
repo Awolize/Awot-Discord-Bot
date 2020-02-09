@@ -13,7 +13,7 @@
 -   [BOT] Server Specific prefix. INFO: how do i set prefix per server? -> ?tag callable prefix
 -   [BOT] printbday 00:00
 -   [BOT] pfp viewer - command aliases ["pfp", "pic", "profilepicture"]
--   [ENV][docker] [Docker-link]
+-   [ENV] [Docker]
 -   [APP] Add Light Mode
 
 ### Features
@@ -30,4 +30,4 @@ MIT
 [firebase]: https://firebase.google.com/
 [discord.py]: https://discordpy.readthedocs.io/en/latest/index
 [react native]: https://facebook.github.io/react-native/
-[docker-link]: https://www.docker.com/
+[docker]: https://www.docker.com/
