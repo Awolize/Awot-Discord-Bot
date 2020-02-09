@@ -1,26 +1,32 @@
 # Awot
+
 ### Awot is a Discord stats collecter.
-- Back-end: Python 3.7
-- Cloud Database: [Firebase]'s Cloud Firestore
-- Discord API Wrapper: [discord.py]
-- Front-end: [React Native]
+
+-   Back-end: Python 3.7
+-   Cloud Database: [Firebase]'s Cloud Firestore
+-   Discord API Wrapper: [discord.py]
+-   Front-end: [React Native]
 
 ### Todos
 
- - [BOT] Rewriteing SQLite to PostgreSQL, Done
- - [BOT] "Me" command
- - [BOT] Ping graph
- - [BOT] printbday 00:00
- - [BOT] User Growth
- - [APP] Add Light Mode
+-   [BOT] "Me" command
+-   [BOT] Server Specific prefix. INFO: how do i set prefix per server? -> ?tag callable prefix
+-   [BOT] printbday 00:00
+-   [BOT] pfp viewer - command aliases ["pfp", "pic", "profilepicture"]
+-   [ENV] Docker
+-   [APP] Add Light Mode
 
-License
-----
+### Features
+
+-   [BOT] Rewriteing SQLite to PostgreSQL, Done
+-   [BOT] Ping graph, done
+-   [BOT] User Growth, done
+
+## License
 
 MIT
 
-[//]: # (Reference links!)
-
-   [Firebase]: https://firebase.google.com/
-   [discord.py]: https://discordpy.readthedocs.io/en/latest/index
-   [React Native]: https://facebook.github.io/react-native/
+[//]: # "Reference links!"
+[firebase]: https://firebase.google.com/
+[discord.py]: https://discordpy.readthedocs.io/en/latest/index
+[react native]: https://facebook.github.io/react-native/
