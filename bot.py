@@ -55,7 +55,7 @@ class Awot(commands.Bot):
 
 
     async def is_owner(self, ctx):
-    return ctx.author.id == self.owner_id or ctx.author.id in self.owner_ids
+        return ctx.author.id == self.owner_id or ctx.author.id in self.owner_ids
 
     @bot.command(name='eval')
     @commands.check(self.is_owner)
