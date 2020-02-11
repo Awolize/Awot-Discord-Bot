@@ -53,16 +53,6 @@ class Awot(commands.Bot):
         except Exception as e:
             print(f'[Error] [run] {e}')
 
-
-    async def is_owner(self, ctx):
-        return ctx.author.id == self.owner_id or ctx.author.id in self.owner_ids
-
-    @bot.command(name='eval')
-    @commands.check(self.is_owner)
-    async def _eval(self, ctx, *, code):
-        """A bad example of an eval command"""
-        await ctx.send(eval(code))
-
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     try:

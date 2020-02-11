@@ -117,6 +117,14 @@ class Misc(commands.Cog):
         except Exception as e:
             print(e)
 
+    async def is_owner(self, ctx):
+        return ctx.author.id == self.owner_id or ctx.author.id in self.owner_ids
+
+    @commands.command(name='eval')
+    @commands.check(self.is_owner)
+    async def _eval(self, ctx, *, code):
+        """A bad example of an eval command"""
+        await ctx.send(eval(code))
 class AwotHelpCommand(commands.DefaultHelpCommand):
     def __init__(self):
         super().__init__(command_attrs={
