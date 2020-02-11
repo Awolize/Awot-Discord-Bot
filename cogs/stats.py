@@ -536,9 +536,14 @@ class Stats(commands.Cog):
                 await ctx.send(e)
                 pass
 
+    # TODO
     @_spotify.group(name='top', invoke_without_command=True)
     async def _spotify_top(self, ctx, date=None):
-        await ctx.send('">spotify top songs" to list songs\n">spotify top members" to list users')
+        await ctx.send('`>spotify top songs` to list songs\n`>spotify top members` to list users')
+        possible_subcommand = ctx.command.all_commands.get(arg, None)
+        if possible_subcommand:
+            print(possible_subcommand)
+            #await possible_subcommand.invoke(ctx)
 
     @_spotify_top.command(name='members', aliases=["users"])
     async def _spotify_top_members(self, ctx, date=None):

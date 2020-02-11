@@ -10,3 +10,4 @@ config.py
 /venv/
 .idea/*
 Dockerfile
+config_main.py
