@@ -118,7 +118,7 @@ class Misc(commands.Cog):
             print(e)
 
     async def is_owner(self, ctx):
-        return ctx.author.id == self.owner_id or ctx.author.id in self.owner_ids
+        return ctx.author.id == self.bot.owner_id or ctx.author.id in self.bot.owner_ids
 
     @commands.command(name='eval')
     @commands.check(self.is_owner)
