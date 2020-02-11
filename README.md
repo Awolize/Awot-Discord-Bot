@@ -13,8 +13,11 @@
 -   [BOT] Server Specific prefix. INFO: how do i set prefix per server? -> ?tag callable prefix
 -   [BOT] printbday 00:00
 -   [BOT] pfp viewer - command aliases ["pfp", "pic", "profilepicture"]
--   [ENV] [Docker]
+-   [ENV][docker]
 -   [APP] Add Light Mode
+
+EVAL
+on error -> traceback
 
 ### Features
 
