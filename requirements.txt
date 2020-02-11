@@ -1,0 +1,8 @@
+aiohttp
+asyncio
+asyncpg
+Cython
+discord.py
+matplotlib
+psutil
+numpy
