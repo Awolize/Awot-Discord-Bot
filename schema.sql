@@ -89,4 +89,4 @@ CREATE TABLE pings(
     ping     	INT NOT NULL,
 	t          	TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP(0),
     PRIMARY KEY (ping, t)
-);;
+);;;
