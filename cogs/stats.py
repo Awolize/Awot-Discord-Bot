@@ -425,7 +425,7 @@ class Stats(commands.Cog):
         await self.bot.db.add_song(member.id, act.title, act.album, act.artist, act.track_id, act.duration.seconds,
                                    duration.seconds, act.album_cover_url)
 
-    async def spotify_embed(self, ctx, date, result):
+    async def spotify_embed(self, ctx, date, result, embed_title= "List of the most played songs"):
 
         title_print = ""
         artist_print = ""
@@ -444,12 +444,11 @@ class Stats(commands.Cog):
             await ctx.send("No data corresponding to the input")
             return
 
-        title = f"List of the most played songs"
         author = f"~~ Spotify ~~"
-        description = f"Based on data from \n{date.strftime('%Y-%m-%d %H:%M:%S')}"
+        description = f"Based on data from \n`{date.strftime('%Y-%m-%d %H:%M:%S')}`"
         thumbnail_url = await self.bot.db.get_album_cover_url(result[0]["track_id"])
 
-        embed = discord.Embed(title=title, description=description, color=0x1DB954)
+        embed = discord.Embed(title=embed_title, description=description, color=0x1DB954)
         embed.set_author(name=author)
         embed.set_thumbnail(url=thumbnail_url)
         embed.add_field(name="Song", value=title_print, inline=True)
@@ -460,29 +459,30 @@ class Stats(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.group(name='spotify', invoke_without_command=True)
-    async def _spotify(self, ctx, *, arg: str):
+    async def _spotify(self, ctx, *, argument: str = None):
         """
         Displays most played songs in the channel or by a user.
+
+        >spotify @member
+        >spotify song
         """
-        try:
-            member = await commands.MemberConverter().convert(ctx, arg)
-        except:
-            member = None
+        if argument is None:
+            member = ctx.author
+        else:
+            try:
+                member = await commands.MemberConverter().convert(ctx, argument)
+            except discord.ext.commands.errors.BadArgument as e:
+                member = None
 
         if isinstance(member, discord.Member):
-            msg = await ctx.send(f'[Member] Getting music stats for {member.name}...')
-
             # Search db for member info
             result = await self.bot.db.get_song_by_id(member.id)
-            await self.spotify_embed(ctx, datetime.strptime("2020-01-25", '%Y-%m-%d'), result)
-
-            await msg.edit(delete_after=5)
+            await self.spotify_embed(ctx, datetime.strptime("2020-01-25", '%Y-%m-%d'), 
+                result, embed_title=f"List of the most played songs by {member.name}")
 
         else:
-            song = arg
+            song = argument
             try:
-                og_msg = await ctx.send(content=f'[Song] Getting music stats for "{song}"...', delete_after=60)
-
                 members = []
                 for member in ctx.guild.members:
                     if not member.bot:
@@ -491,31 +491,33 @@ class Stats(commands.Cog):
                 result = await self.bot.db.get_song_by_name(tuple(members), song)
 
                 if len(result) == 0:
-                    await og_msg.delete()
-                    await ctx.send(f"Could not find anything (searched for: {song})")
+                    await ctx.send(f"**[Song]** Could not find anything (searched for: {song})")
                     return
                 elif (len(result) == 1):
                     selected_song = result[0]["track_id"]
                 else:
-                    print_string = f'''Found multiple results based on "{song}".\nSelect one by typing the associated index (1 - {len(result)}).\n\n'''
+                    print_string = f'''Found `{len(result)}` results based on "{song}".\nSelect one by typing the associated index (` 1 - {10 if len(result) > 9 else len(result)} `). \n\n'''
                     index_list = list(range(1, len(result) + 1))
                     for index, row in enumerate(result):
+                        if index > 9:
+                            break
                         title = row["title"]
                         artist = row["artist"]
                         print_string += f"{index + 1}. {title} by {artist}\n"
+                        
                     await ctx.send(print_string)
 
                     def check(m):
-                        return m.content.isdigit() and int(m.content) in index_list
+                        return (m.content.isdigit() and int(m.content) in index_list)
 
                     try:
                         msg = await self.bot.wait_for('message', timeout=60.0, check=check)
                     except asyncio.TimeoutError:
-                        ctx.send("Time out.")
+                        await ctx.send(f"Waiting for response timed out. (How could you let `Awot` down, `{ctx.author.name}`?) **:(**")
                         return
+
                     selected_song = result[int(msg.content) - 1]["track_id"]
 
-                await og_msg.delete()
                 members = []
                 for member in ctx.guild.members:
                     if not member.bot:
@@ -524,33 +526,31 @@ class Stats(commands.Cog):
                 artist = result[0]["artist"]
                 title = result[0]["title"]
                 album = result[0]["album"]
-                print_string = f"**{title}** by {artist} (Album: {album})\n"
+
+                temp_name = "User"
+                temp_played = "Times played"
+                print_string = f"` {temp_name:<25}` - ` {temp_played:<15}`\n"
 
                 for index, row in enumerate(result):
                     member = ctx.guild.get_member(row["user_id"])
-                    print_string += f"{index + 1}. {str(member)} played the song {round(row['pt'], 1)} times\n"
+                    print_string += f"` {str(member):<25}` - ` {round(row['pt'], 1):<15}`\n"
 
-                await ctx.send(print_string)
+                thumbnail_url = await self.bot.db.get_album_cover_url(selected_song)
+
+                embed = discord.Embed(
+                    title=f"`{title}` by `{artist}` (Album: `{album}`)\n", 
+                    description=print_string, 
+                    color=0x1DB954
+                )
+                embed.set_thumbnail(url=thumbnail_url)
+                await ctx.send(embed=embed)
 
             except Exception as e:
                 await ctx.send(e)
                 pass
 
-    # TODO
-    @_spotify.group(name='top', invoke_without_command=True)
+    @_spotify.command(name='top')
     async def _spotify_top(self, ctx, date=None):
-        await ctx.send('`>spotify top songs` to list songs\n`>spotify top members` to list users')
-        possible_subcommand = ctx.command.all_commands.get(arg, None)
-        if possible_subcommand:
-            print(possible_subcommand)
-            #await possible_subcommand.invoke(ctx)
-
-    @_spotify_top.command(name='members', aliases=["users"])
-    async def _spotify_top_members(self, ctx, date=None):
-        await ctx.send("To be implemented.")
-
-    @_spotify_top.command(name='songs')
-    async def _spotify_top_songs(self, ctx, date=None):
         """
         ">help spotify top" for examples
 
@@ -593,12 +593,8 @@ class Stats(commands.Cog):
                     if not member.bot:
                         members.append(member.id)
 
-                msg = await ctx.send(f'Gather information from the database and building an embed..')
-
                 result = await self.bot.db.get_most_played_song(tuple(members), date)
                 await self.spotify_embed(ctx, date, result)
-
-                await msg.edit(delete_after=5)
 
             except Exception as e:
                 print(e)
@@ -611,8 +607,7 @@ class Stats(commands.Cog):
             f"[Error] Error type: {type(error)}\n"
             f"[Error] Error:      {error}\n")
 
-        await ctx.send('Type ">help spotify" for more information')
-        return
+        await ctx.send_help('spotify')
 
     @commands.command(name='info', aliases=["about", "profile"])
     async def _info(self, ctx, member: discord.Member = None) -> None:

@@ -13,14 +13,16 @@ import database_handler as dbh
 import config
 
 INIT_EXTENSIONS = [
+    "cogs.admin",
     "cogs.birthday",
+    "cogs.help",
+    "cogs.misc",
     "cogs.presence",
-    "cogs.system",
     "cogs.stats",
-    "cogs.misc"
+    "cogs.system",    
 ]
 
-DESCRIPTION = ""
+DESCRIPTION = "Awot 😎"
 
 
 class Awot(commands.Bot):

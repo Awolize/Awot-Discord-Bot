@@ -5,6 +5,10 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from io import BytesIO
 
+import traceback
+from contextlib import redirect_stdout
+import textwrap
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,10 +26,9 @@ class Misc(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.old_help_command = self.bot.help_command
-        self.bot.help_command = AwotHelpCommand()
-        self.bot.help_command.cog = self
         self._user_growth_save.start()
+
+        self._last_result = None
 
     def cog_unload(self):
         self._user_growth_save.stop()
@@ -116,56 +119,6 @@ class Misc(commands.Cog):
             await ctx.send(file=discord.File(fp=buffer, filename="Member_Growth.png"))
         except Exception as e:
             print(e)
-
-    async def is_owner(self, ctx):
-        return ctx.author.id == self.bot.owner_id or ctx.author.id in self.bot.owner_ids
-
-    @commands.command(name='eval')
-    @commands.check(self.is_owner)
-    async def _eval(self, ctx, *, code):
-        """A bad example of an eval command"""
-        await ctx.send(eval(code))
-class AwotHelpCommand(commands.DefaultHelpCommand):
-    def __init__(self):
-        super().__init__(command_attrs={
-            'cooldown': commands.Cooldown(1, 3.0, commands.BucketType.member),
-            'help': 'Shows help about the bot, a command, or a category.'
-        })
-
-    async def send_bot_help(self, mapping):
-
-        ctx = self.context
-
-        description = f"Use `{ctx.prefix}help [Command/Category]` for more info on a command or category.\n"
-
-        for cog in sorted(ctx.bot.cogs.values(), key=lambda cog: cog.qualified_name):
-
-            if ctx.author.id in ctx.bot.owner_ids:
-                cog_commands = [command for command in cog.get_commands()]
-            else:
-                cog_commands = [
-                    command for command in cog.get_commands() if command.hidden == False]
-
-            if len(cog_commands) == 0:
-                continue
-
-            cog_commands.sort(key=lambda c: c.name)
-
-            description += f"\n__**{cog.qualified_name}:**__\n"
-
-            for command in cog_commands:
-                command_help = embedify(command.help)
-                description += f"`{command.name}` \u200b \u200b {command_help}\n"
-
-        embed = discord.Embed(
-            colour=discord.Color.blue(),
-            title=f"__{ctx.bot.user.name}'s help page__",
-            description=description
-        )
-
-        await ctx.send(embed=embed)
-
-        # await super().send_bot_help(mapping)
 
 def embedify(text: str, len: int = 55) -> str:
     text = text[:len] + (text[len:] and '..')
