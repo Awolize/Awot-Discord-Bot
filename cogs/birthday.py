@@ -16,13 +16,14 @@ class Birthday(commands.Cog):
     def __init__(self, bot):
         try:
             self.bot = bot
-            self.print_birthday.start()
+            self.print_birthday_wait.start()
             self.BIRTHDAY_PRINT_TIME = bot.config.BIRTHDAY_PRINT_TIME
         except Exception as e:
             print(f"[Error] - [Birthday] - [init] - {e}.")
 
     def cog_unload(self):
         self.print_birthday.stop()
+        self.print_birthday_wait.stop()
 
     # Rewrite
     @tasks.loop(hours=24)
@@ -66,17 +67,20 @@ class Birthday(commands.Cog):
 
                     msg = await channel.send(f"Happy {age}{ordinal} birthday {member.mention}!!")
 
-    @print_birthday.before_loop
-    async def before_print_birthday(self):
+    @tasks.loop(seconds=3, count=1)
+    async def print_birthday_wait(self):
         await self.bot.wait_until_ready()
 
         # Calc delta til next BIRTHDAY_PRINT_TIME
-        now = time.strftime('%H:%M:%S')
+        now = datetime.utcnow().strftime('%H:%M:%S')
         delta = (datetime.strptime(self.BIRTHDAY_PRINT_TIME, '%H:%M:%S') -
                  datetime.strptime(now, '%H:%M:%S')).seconds
 
         # sleep until BIRTHDAY_PRINT_TIME
+        restart_time = datetime.strptime(self.BIRTHDAY_PRINT_TIME, '%H:%M:%S').time()
+        print(f"[Birthday] Waiting for {restart_time} which is {delta} s from now (UTC)")
         await asyncio.sleep(delta)
+        self.print_birthday.start()
 
     @commands.command(name="bday", aliases=["getBirthday", "getbday"])
     async def _bday(self, ctx, member: discord.Member = None):
