@@ -47,7 +47,7 @@ class Admin(commands.Cog):
     async def load(self, ctx, *, module):
         """Loads a module."""
         try:
-            self.reload_or_load_extension(f"cogs.{module.lower()}")
+            self.reload_or_load_extension(module)
         except commands.ExtensionError as e:
             await ctx.send(f'{e.__class__.__name__}: {e}')
         else:
@@ -67,7 +67,7 @@ class Admin(commands.Cog):
     async def _reload(self, ctx, *, module):
         """Reloads a module."""
         try:
-            self.reload_or_load_extension(f"cogs.{module.lower()}")
+            self.reload_or_load_extension(module)
         except commands.ExtensionError as e:
             await ctx.send(f'{e.__class__.__name__}: {e}')
         else:
@@ -83,7 +83,7 @@ class Admin(commands.Cog):
             await ctx.send("You do not have permission for this command.")
             return
 
-        msg = await ctx.send("Reloading all cogs...\n")
+        msg = await ctx.send("Reloading all cogs..\n")
         content = msg.content + "\n"
 
         cogs = list(self.bot.cogs)
@@ -92,23 +92,21 @@ class Admin(commands.Cog):
         for cog in cogs:
             cog = cog.lower()
             try:
-                self.reload_or_load_extension(f"cogs.{cog}")
-                temp = f"👍 Reloaded cogs.{cog}\n"
+                self.reload_or_load_extension(cog)
+                temp = f"✅ Reloaded cog: `{cog}`\n"
                 successful_reloads += 1
-            except commands.ExtensionError as e:
-                temp = f'{e.__class__.__name__}: {e} 👎\n'
             except Exception as e:
-                print(f"ERRRRRRRRRRORRRRRRRRRRRRRRRRRR: {e}")
+                temp = f'❌ {e.__class__.__name__}: {e}\n'
             content += temp
 
         content += f"\nSuccessfully reloaded [ {successful_reloads} / {len(cogs)} ]"
         await msg.edit(content=content)
         if successful_reloads == len(cogs):
-            await msg.add_reaction("✅")
+            await msg.add_reaction("👍")
         else:
-            await msg.add_reaction("❌")
+            await msg.add_reaction("👎")
 
-    @commands.command(hidden=True)
+    @commands.command(name='gitpull', hidden=True)
     async def _git_pull(self, ctx):
         """Reloads all modules, while pulling from git."""
 
